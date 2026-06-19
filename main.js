@@ -34,9 +34,29 @@ const g = { ...DEFAULTS };
 
 (() => {
   const $ = (sel) => document.querySelector(sel);
+  const $$ = (sel) => document.querySelectorAll(sel);
   const clamp = (n, lo, hi) => (n < lo ? lo : n > hi ? hi : n);
   const truncate = (str, len) =>
     str.length < len ? str : `${str.slice(0, ~~(len / 2))}⋯${str.slice(-(~~(len / 2)))}`;
+
+  const wireDropZone = (el, onDrop) => {
+    ["dragenter", "dragover", "dragleave", "drop"].forEach((ev) =>
+      el.addEventListener(ev, (e) => { e.preventDefault(); e.stopPropagation(); })
+    );
+    ["dragenter", "dragover"].forEach((ev) =>
+      el.addEventListener(ev, () => el.classList.add("highlight"))
+    );
+    ["dragleave", "drop"].forEach((ev) =>
+      el.addEventListener(ev, () => el.classList.remove("highlight"))
+    );
+    el.addEventListener("drop", (e) => onDrop(e.dataTransfer.files[0]));
+  };
+
+  const togglePressed = (btn) => {
+    const next = btn.getAttribute("aria-pressed") !== "true";
+    btn.setAttribute("aria-pressed", String(next));
+    return next;
+  };
 
   // ── Default sprite (직접 그린 캐릭터, 외부 파일 의존성 없음) ───────────────
   const createDefaultSprite = () => {
@@ -419,17 +439,7 @@ const g = { ...DEFAULTS };
       imageLoader.loadImage(URL.createObjectURL(file));
     };
 
-    // 빈 상태 드롭존 이벤트
-    ["dragenter", "dragover", "dragleave", "drop"].forEach((ev) =>
-      $dropArea.addEventListener(ev, (e) => { e.preventDefault(); e.stopPropagation(); })
-    );
-    ["dragenter", "dragover"].forEach((ev) =>
-      $dropArea.addEventListener(ev, () => $dropArea.classList.add("highlight"))
-    );
-    ["dragleave", "drop"].forEach((ev) =>
-      $dropArea.addEventListener(ev, () => $dropArea.classList.remove("highlight"))
-    );
-    $dropArea.addEventListener("drop", (e) => handleFile(e.dataTransfer.files[0]));
+    wireDropZone($dropArea, handleFile);
     $fileInput.addEventListener("change", () => handleFile($fileInput.files[0]));
 
     // 에디터 이미지 변경 버튼 — 파일 input 직접 트리거
@@ -437,18 +447,7 @@ const g = { ...DEFAULTS };
       e.preventDefault();
       $fileInput.click();
     });
-
-    // 에디터 화면에서도 드래그 드롭 허용
-    ["dragenter", "dragover", "dragleave", "drop"].forEach((ev) =>
-      $dropAreaEditor.addEventListener(ev, (e) => { e.preventDefault(); e.stopPropagation(); })
-    );
-    ["dragenter", "dragover"].forEach((ev) =>
-      $dropAreaEditor.addEventListener(ev, () => $dropAreaEditor.classList.add("highlight"))
-    );
-    ["dragleave", "drop"].forEach((ev) =>
-      $dropAreaEditor.addEventListener(ev, () => $dropAreaEditor.classList.remove("highlight"))
-    );
-    $dropAreaEditor.addEventListener("drop", (e) => handleFile(e.dataTransfer.files[0]));
+    wireDropZone($dropAreaEditor, handleFile);
 
     const loadFromUrl = () => {
       const url = $("#uploadUrl").value.trim();
@@ -475,7 +474,7 @@ const g = { ...DEFAULTS };
     };
 
     $playBtn.addEventListener("click", () => togglePlay());
-    [$("#prev"), $("#next")].forEach((el) =>
+    $$("#prev, #next").forEach((el) =>
       el.addEventListener("click", (e) => {
         togglePlay(true);
         animation.seek(e.target.id === "prev" ? -1 : 1);
@@ -511,17 +510,13 @@ const g = { ...DEFAULTS };
 
     // 좌우 반전 — 토글 버튼
     $flipBtn.addEventListener("click", () => {
-      const active = $flipBtn.getAttribute("aria-pressed") === "true";
-      $flipBtn.setAttribute("aria-pressed", String(!active));
-      g.flip = !active;
+      g.flip = togglePressed($flipBtn);
       animation.tick();
     });
 
     // 드래그 모드 — 토글 버튼
     $adjustBtn.addEventListener("click", () => {
-      const active = $adjustBtn.getAttribute("aria-pressed") === "true";
-      const next = !active;
-      $adjustBtn.setAttribute("aria-pressed", String(next));
+      const next = togglePressed($adjustBtn);
       $canvas.classList.toggle("adjust-mode", next);
       if (next) togglePlay(true);
       animation.toggleAdjust(next);
@@ -564,21 +559,22 @@ const g = { ...DEFAULTS };
         $exportBtn.textContent = "생성 중…";
       },
       (p) => {
-        const pct = Math.round(p * 100);
-        $exportBtn.textContent = `${pct}%`;
-        $info.textContent = `${pct}%`;
+        const pcts = `${Math.round(p * 100)}%`;
+        $exportBtn.textContent = pcts;
+        $info.textContent = pcts;
       },
       (blob, t) => {
-        const sec  = ((t - gifStartTime) / 1000).toFixed(2);
-        const size = (blob.size / 1000).toFixed(1);
-        $info.textContent = `${sec}초 · ${size}KB`;
+        const sec   = ((t - gifStartTime) / 1000).toFixed(2);
+        const size  = (blob.size / 1000).toFixed(1);
+        const label = `${sec}초 · ${size}KB`;
+        $info.textContent = label;
         $exportBtn.textContent = exportBtnText;
         $exportBtn.disabled = false;
 
         const url = URL.createObjectURL(blob);
         $result.src = url;
         $download.href = url;
-        $overlayMeta.textContent = `${sec}초 · ${size}KB`;
+        $overlayMeta.textContent = label;
         $overlay.classList.add("open");
       }
     );
