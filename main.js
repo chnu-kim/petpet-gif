@@ -77,6 +77,7 @@ const g = { ...DEFAULTS };
     ctx.imageSmoothingEnabled = false;
     ctx.lineWidth = 1;
     ctx.strokeStyle = "#ff0000";
+    canvas.tabIndex = 0;
 
     // Refresh sprite height proportionally when image changes
     const refreshSprite = () => {
@@ -132,14 +133,14 @@ const g = { ...DEFAULTS };
     };
 
     const tick = () => {
-      requestAnimationFrame(() => renderFrame(g.currentFrame, ctx, allowAdjust));
+      requestAnimFrame(() => renderFrame(g.currentFrame, ctx, allowAdjust));
     };
 
     const play = () => {
       if (!loop) {
         loop = requestInterval(() => {
           renderFrame(g.currentFrame, ctx, allowAdjust);
-          g.currentFrame = (g.currentFrame + 1) % 5;
+          g.currentFrame = (g.currentFrame + 1) % (MAX_FRAME + 1);
         }, g.delay);
       }
     };
@@ -151,7 +152,7 @@ const g = { ...DEFAULTS };
 
     const seek = (delta) => {
       stop();
-      const next = (g.currentFrame + delta) % 5;
+      const next = (g.currentFrame + delta) % (MAX_FRAME + 1);
       g.currentFrame = next < 0 ? MAX_FRAME : next;
       tick();
     };
@@ -215,12 +216,10 @@ const g = { ...DEFAULTS };
       });
     });
 
-    // Keyboard nudge while canvas is focused
-    let lastClick = null;
-    document.addEventListener("click", (e) => (lastClick = e.target));
-    document.addEventListener("keydown", (e) => {
-      if (lastClick !== canvas) return;
-      const moved = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
+    // Keyboard nudge when canvas is focused (tabIndex = 0 set above)
+    const KEY_DELTAS = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+    canvas.addEventListener("keydown", (e) => {
+      const moved = KEY_DELTAS[e.key];
       if (!moved) return;
       e.preventDefault();
       g.spriteX += moved[0];
@@ -234,12 +233,9 @@ const g = { ...DEFAULTS };
 
   // ── GifRenderer ───────────────────────────────────────────────────────────────
   const GifRenderer = (animation, onStart, onProgress, onFinish) => {
-    const renderCanvas = document.createElement("canvas");
-    const renderCtx = renderCanvas.getContext("2d", CANVAS_OPTIONS);
     const tempCanvas = document.createElement("canvas");
     const tempCtx = tempCanvas.getContext("2d", CANVAS_OPTIONS);
-    renderCanvas.width = renderCanvas.height = tempCanvas.width = tempCanvas.height = OUT_SIZE;
-    renderCtx.fillStyle = "#0f0";
+    tempCanvas.width = tempCanvas.height = OUT_SIZE;
 
     // Replace transparent pixels with green key color for GIF transparency
     const fixTransparency = (data) => {
@@ -259,8 +255,8 @@ const g = { ...DEFAULTS };
           animation.renderFrame(i, tempCtx, false);
           const imgData = tempCtx.getImageData(0, 0, OUT_SIZE, OUT_SIZE);
           fixTransparency(imgData.data);
-          renderCtx.putImageData(imgData, 0, 0);
-          gif.addFrame(renderCtx, { copy: true, delay });
+          tempCtx.putImageData(imgData, 0, 0);
+          gif.addFrame(tempCtx, { copy: true, delay });
         }
 
         gif.on("start",    () => onStart(performance.now()));
@@ -278,13 +274,20 @@ const g = { ...DEFAULTS };
     const $hand    = new Image();
     $hand.crossOrigin = "Anonymous";
 
+    // Cache sprite slider elements — used in onSpriteMove hot path
+    const $spriteXSlider = $("#spriteXSlider");
+    const $spriteXVal    = $("#spriteXVal");
+    const $spriteYSlider = $("#spriteYSlider");
+    const $spriteYVal    = $("#spriteYVal");
+
     const animation = PetPetAnimation($canvas, $hand, $preview, {
       // Keep position sliders in sync with drag
       onSpriteMove: (x, y) => {
-        $("#spriteXSlider").value = Math.round(x);
-        $("#spriteYSlider").value = Math.round(y);
-        $("#spriteXVal").textContent = Math.round(x);
-        $("#spriteYVal").textContent = Math.round(y);
+        const rx = Math.round(x), ry = Math.round(y);
+        $spriteXSlider.value = rx;
+        $spriteYSlider.value = ry;
+        $spriteXVal.textContent = rx;
+        $spriteYVal.textContent = ry;
       },
     });
 
@@ -305,17 +308,19 @@ const g = { ...DEFAULTS };
       if (loop) { loop = clearRequestInterval(loop); animation.play(); }
       else animation.tick();
 
-      $("#squish").value       = ~~(DEFAULTS.squish * 100);
-      $("#squishVal").textContent = `${~~(DEFAULTS.squish * 100)}%`;
-      $("#scale").value        = ~~(DEFAULTS.scale * 100);
-      $("#scaleVal").textContent  = `${~~(DEFAULTS.scale * 100)}%`;
-      $("#fps").value          = $("#fpsVal").value = ~~(1000 / DEFAULTS.delay);
+      const sqPct = ~~(DEFAULTS.squish * 100);
+      const scPct = ~~(DEFAULTS.scale * 100);
+      $("#squish").value          = sqPct;
+      $("#squishVal").textContent = `${sqPct}%`;
+      $("#scale").value           = scPct;
+      $("#scaleVal").textContent  = `${scPct}%`;
+      $("#fps").value = $("#fpsVal").value = ~~(1000 / DEFAULTS.delay);
       $("#toggleFlip").checked = false;
 
-      $("#spriteXSlider").value      = DEFAULTS.spriteX;
-      $("#spriteXVal").textContent   = DEFAULTS.spriteX;
-      $("#spriteYSlider").value      = DEFAULTS.spriteY;
-      $("#spriteYVal").textContent   = DEFAULTS.spriteY;
+      $spriteXSlider.value      = DEFAULTS.spriteX;
+      $spriteXVal.textContent   = DEFAULTS.spriteX;
+      $spriteYSlider.value      = DEFAULTS.spriteY;
+      $spriteYVal.textContent   = DEFAULTS.spriteY;
     };
 
     $("#reset").addEventListener("click", reset);
@@ -377,31 +382,29 @@ const g = { ...DEFAULTS };
     );
 
     // ── Image controls ─────────────────────────────────────────────────────────
-    ["input", "change"].forEach((ev) => {
-      $("#squish").addEventListener(ev, (e) => {
-        const v = clamp(parseInt(e.target.value), 100, 300);
-        g.squish = +(v / 100).toFixed(3);
-        $("#squishVal").textContent = `${v}%`;
-        animation.tick();
-      }, { passive: true });
+    $("#squish").addEventListener("input", (e) => {
+      const v = clamp(parseInt(e.target.value), 100, 300);
+      g.squish = +(v / 100).toFixed(3);
+      $("#squishVal").textContent = `${v}%`;
+      animation.tick();
+    }, { passive: true });
 
-      $("#scale").addEventListener(ev, (e) => {
-        const v = clamp(parseInt(e.target.value), 20, 200);
-        g.scale = +(v / 100).toFixed(3);
-        $("#scaleVal").textContent = `${v}%`;
-        animation.tick();
-      }, { passive: true });
-    });
+    $("#scale").addEventListener("input", (e) => {
+      const v = clamp(parseInt(e.target.value), 20, 200);
+      g.scale = +(v / 100).toFixed(3);
+      $("#scaleVal").textContent = `${v}%`;
+      animation.tick();
+    }, { passive: true });
 
-    $("#spriteXSlider").addEventListener("input", (e) => {
+    $spriteXSlider.addEventListener("input", (e) => {
       g.spriteX = parseInt(e.target.value);
-      $("#spriteXVal").textContent = g.spriteX;
+      $spriteXVal.textContent = g.spriteX;
       animation.tick();
     });
 
-    $("#spriteYSlider").addEventListener("input", (e) => {
+    $spriteYSlider.addEventListener("input", (e) => {
       g.spriteY = parseInt(e.target.value);
-      $("#spriteYVal").textContent = g.spriteY;
+      $spriteYVal.textContent = g.spriteY;
       animation.tick();
     });
 
@@ -417,6 +420,9 @@ const g = { ...DEFAULTS };
     });
 
     // ── Speed ──────────────────────────────────────────────────────────────────
+    const $fps    = $("#fps");
+    const $fpsVal = $("#fpsVal");
+
     const updateSpeed = (val) => {
       const newDelay = ~~(1000 / clamp(parseInt(val), 2, 60));
       if (newDelay !== g.delay) {
@@ -425,15 +431,16 @@ const g = { ...DEFAULTS };
       }
     };
 
-    $$("#fps, #fpsVal").forEach((el) => el.addEventListener("change", (e) => updateSpeed(e.target.value)));
-    $("#fps").addEventListener("input", (e) => { $("#fpsVal").value = e.target.value; });
-    $("#fpsVal").addEventListener("input", (e) => { $("#fps").value = e.target.value; });
+    $fps.addEventListener("change",  (e) => updateSpeed(e.target.value));
+    $fpsVal.addEventListener("change", (e) => updateSpeed(e.target.value));
+    $fps.addEventListener("input",   (e) => { $fpsVal.value = e.target.value; });
+    $fpsVal.addEventListener("input", (e) => { $fps.value = e.target.value; });
 
     // ── GIF Export ─────────────────────────────────────────────────────────────
-    const $exportBtn    = $("#export");
-    const $info         = $("#info");
-    const $result       = $("#result");
-    const $download     = $("#download");
+    const $exportBtn     = $("#export");
+    const $info          = $("#info");
+    const $result        = $("#result");
+    const $download      = $("#download");
     const $outputSection = $("#outputSection");
     let exportBtnText = "";
     let gifStartTime  = 0;
