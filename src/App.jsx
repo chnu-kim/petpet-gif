@@ -32,18 +32,16 @@ export default function App() {
   const [playing, setPlaying]       = useState(false);
   const [fileName, setFileName]     = useState('이미지 변경');
 
-  // ── Upload errors ──────────────────────────────────────────────────────────
-  const [uploadError, setUploadError]             = useState('');
-  const [uploadErrorEditor, setUploadErrorEditor] = useState('');
+  // ── Upload error ───────────────────────────────────────────────────────────
+  const [uploadError, setUploadError] = useState('');
 
   // ── GIF export ─────────────────────────────────────────────────────────────
-  const [exporting, setExporting]     = useState(false);
   const [exportLabel, setExportLabel] = useState('GIF 생성');
+  const exporting = exportLabel !== 'GIF 생성';
   const [exportInfo, setExportInfo]   = useState('');
   const [overlayOpen, setOverlayOpen] = useState(false);
   const [gifUrl, setGifUrl]           = useState('');
   const [gifMeta, setGifMeta]         = useState('');
-  const gifStartRef = useRef(0);
 
   // ── DOM refs ───────────────────────────────────────────────────────────────
   const canvasRef      = useRef(null);
@@ -65,6 +63,7 @@ export default function App() {
     if (!canvas || !preview) return;
 
     let cancelled = false; // StrictMode double-mount guard
+    let gifStart = 0;
 
     const hand = new Image();
     hand.crossOrigin = 'Anonymous';
@@ -82,8 +81,7 @@ export default function App() {
       animation,
       workerScript,
       (t) => {
-        gifStartRef.current = t;
-        setExporting(true);
+        gifStart = t;
         setExportLabel('생성 중…');
       },
       (p) => {
@@ -92,12 +90,11 @@ export default function App() {
         setExportInfo(pct);
       },
       (blob, t) => {
-        const sec   = ((t - gifStartRef.current) / 1000).toFixed(2);
+        const sec   = ((t - gifStart) / 1000).toFixed(2);
         const size  = (blob.size / 1000).toFixed(1);
         const label = `${sec}초 · ${size}KB`;
         setExportInfo(label);
         setExportLabel('GIF 생성');
-        setExporting(false);
         setGifUrl((prev) => { URL.revokeObjectURL(prev); return URL.createObjectURL(blob); });
         setGifMeta(label);
         setOverlayOpen(true);
@@ -109,7 +106,6 @@ export default function App() {
         if (cancelled) return;
         setView('editor');
         setUploadError('');
-        setUploadErrorEditor('');
         preview.src = data;
         animation.play();
         setPlaying(true);
@@ -117,7 +113,6 @@ export default function App() {
       () => {
         if (cancelled) return;
         setUploadError('이미지를 불러올 수 없습니다.');
-        setUploadErrorEditor('이미지를 불러올 수 없습니다.');
       }
     );
 
@@ -131,7 +126,6 @@ export default function App() {
   const handleFile = useCallback((file) => {
     if (!file?.type.startsWith('image/')) return;
     setUploadError('');
-    setUploadErrorEditor('');
     setFileName(truncate(file.name, 26));
     loaderRef.current?.loadImage(URL.createObjectURL(file));
   }, []);
@@ -170,12 +164,11 @@ export default function App() {
   }, []);
 
   // ── Playback ───────────────────────────────────────────────────────────────
-  const togglePlay = useCallback((forceStop = false) => {
+  const togglePlay = useCallback(() => {
     const anim = animationRef.current;
     if (!anim) return;
-    const shouldStop = forceStop || playing;
-    if (shouldStop) { anim.stop(); setPlaying(false); }
-    else            { anim.play(); setPlaying(true); }
+    if (playing) { anim.stop(); setPlaying(false); }
+    else         { anim.play(); setPlaying(true); }
   }, [playing]);
 
   const seek = useCallback((delta) => {
@@ -184,29 +177,11 @@ export default function App() {
   }, []);
 
   // ── Slider controls ────────────────────────────────────────────────────────
-  const handleScale = useCallback((e) => {
-    const v = clamp(parseInt(e.target.value), 20, 200);
-    g.scale = +(v / 100).toFixed(3);
-    setScaleVal(v);
-    animationRef.current?.tick();
-  }, []);
-
-  const handleSquish = useCallback((e) => {
-    const v = clamp(parseInt(e.target.value), 100, 300);
-    g.squish = +(v / 100).toFixed(3);
-    setSquishVal(v);
-    animationRef.current?.tick();
-  }, []);
-
-  const handleSpriteX = useCallback((e) => {
-    g.spriteX = parseInt(e.target.value);
-    setSpriteX(g.spriteX);
-    animationRef.current?.tick();
-  }, []);
-
-  const handleSpriteY = useCallback((e) => {
-    g.spriteY = parseInt(e.target.value);
-    setSpriteY(g.spriteY);
+  const handleSlider = useCallback((gKey, setter, rawVal, { divisor = 1, min, max } = {}) => {
+    const raw = parseInt(rawVal);
+    const v = min !== undefined ? clamp(raw, min, max) : raw;
+    g[gKey] = divisor !== 1 ? v / divisor : v;
+    setter(v);
     animationRef.current?.tick();
   }, []);
 
@@ -220,9 +195,9 @@ export default function App() {
   const handleAdjust = useCallback(() => {
     const next = !adjustMode;
     setAdjustMode(next);
-    if (next) togglePlay(true);
+    if (next) { animationRef.current?.stop(); setPlaying(false); }
     animationRef.current?.toggleAdjust(next);
-  }, [adjustMode, togglePlay]);
+  }, [adjustMode]);
 
   const handleFpsChange = useCallback((rawVal) => {
     const clamped = clamp(parseInt(rawVal) || INITIAL_FPS, 2, 60);
@@ -327,7 +302,7 @@ export default function App() {
               <button
                 className="play-btn play-btn-main"
                 title="재생/정지"
-                onClick={() => togglePlay()}
+                onClick={togglePlay}
               >
                 {playing ? '⏸' : '▶'}
               </button>
@@ -352,7 +327,7 @@ export default function App() {
               <span style={{ fontSize: '15px' }}>🖼</span>
               <span className="upload-file-name">{fileName}</span>
             </div>
-            {uploadErrorEditor && <p className="upload-error">{uploadErrorEditor}</p>}
+            {uploadError && <p className="upload-error">{uploadError}</p>}
           </div>
 
           {/* 조절 */}
@@ -361,17 +336,20 @@ export default function App() {
 
             <div className="control">
               <span className="ctrl-lbl">크기</span>
-              <input type="range" min="20" max="200" value={scaleVal} onChange={handleScale} />
+              <input type="range" min="20" max="200" value={scaleVal}
+                onChange={(e) => handleSlider('scale', setScaleVal, e.target.value, { divisor: 100, min: 20, max: 200 })} />
               <span className="ctrl-val">{scaleVal}%</span>
             </div>
             <div className="control">
               <span className="ctrl-lbl">X 위치</span>
-              <input type="range" min="-112" max="224" value={spriteX} onChange={handleSpriteX} />
+              <input type="range" min="-112" max="224" value={spriteX}
+                onChange={(e) => handleSlider('spriteX', setSpriteX, e.target.value)} />
               <span className="ctrl-val">{spriteX}</span>
             </div>
             <div className="control">
               <span className="ctrl-lbl">Y 위치</span>
-              <input type="range" min="-112" max="224" value={spriteY} onChange={handleSpriteY} />
+              <input type="range" min="-112" max="224" value={spriteY}
+                onChange={(e) => handleSlider('spriteY', setSpriteY, e.target.value)} />
               <span className="ctrl-val">{spriteY}</span>
             </div>
 
@@ -379,7 +357,8 @@ export default function App() {
 
             <div className="control">
               <span className="ctrl-lbl">눌림</span>
-              <input type="range" min="100" max="300" value={squishVal} onChange={handleSquish} />
+              <input type="range" min="100" max="300" value={squishVal}
+                onChange={(e) => handleSlider('squish', setSquishVal, e.target.value, { divisor: 100, min: 100, max: 300 })} />
               <span className="ctrl-val">{squishVal}%</span>
             </div>
 

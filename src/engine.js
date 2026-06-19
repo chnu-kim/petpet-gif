@@ -245,15 +245,21 @@ export const PetPetAnimation = (canvas, hand, sprite, callbacks = {}) => {
 
   const toggleAdjust = (force) => {
     allowAdjust = force !== undefined ? force : !allowAdjust;
-    if (allowAdjust) { g.currentFrame = 0; stop(); }
-    updateRelativeOffset();
+    if (allowAdjust) {
+      g.currentFrame = 0;
+      stop();
+      updateRelativeOffset();
+      window.addEventListener('scroll', onScroll);
+      window.addEventListener('resize', onResize);
+    } else {
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onResize);
+    }
     tick();
   };
 
   const onScroll = updateRelativeOffset;
   const onResize = updateRelativeOffset;
-  window.addEventListener('scroll', onScroll);
-  window.addEventListener('resize', onResize);
 
   canvas.addEventListener('pointerdown', (e) => {
     if (!allowAdjust) return;
@@ -322,8 +328,7 @@ export const GifRenderer = (animation, workerScriptUrl, onStart, onProgress, onF
         animation.renderFrame(i, tempCtx, false);
         const imgData = tempCtx.getImageData(0, 0, OUT_SIZE, OUT_SIZE);
         fixTransparency(imgData.data);
-        tempCtx.putImageData(imgData, 0, 0);
-        gif.addFrame(tempCtx, { copy: true, delay });
+        gif.addFrame(imgData, { copy: false, delay });
       }
 
       gif.on('start',    () => onStart(performance.now()));
