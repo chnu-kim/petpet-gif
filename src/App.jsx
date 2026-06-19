@@ -1,10 +1,16 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import {
+  Hand, Sun, Moon, Image as ImageIcon, SkipBack, Play, Pause, SkipForward,
+  FlipHorizontal2, Move, RotateCcw, Download,
+} from 'lucide-react';
+import {
   g, DEFAULTS, clamp, truncate,
   createDefaultSprite, ImageLoader, PetPetAnimation, GifRenderer,
 } from './engine.js';
 
 const INITIAL_FPS = Math.round(1000 / DEFAULTS.delay);
+const ICON_SM = 14;
+const ICON_MD = 16;
 
 export default function App() {
   // ── Theme ──────────────────────────────────────────────────────────────────
@@ -232,7 +238,7 @@ export default function App() {
     <>
       <header>
         <div className="header-brand">
-          <div className="brand-icon">✋</div>
+          <div className="brand-icon"><Hand size={ICON_MD} /></div>
           <h1>PetPet Generator</h1>
         </div>
         <button
@@ -240,7 +246,7 @@ export default function App() {
           title="테마 전환"
           onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
         >
-          {theme === 'dark' ? '☀️' : '🌙'}
+          {theme === 'dark' ? <Sun size={ICON_MD} /> : <Moon size={ICON_MD} />}
         </button>
       </header>
 
@@ -262,7 +268,7 @@ export default function App() {
         <p className="empty-sub">이미지를 올리면 손이 쓰다듬는 GIF를 만들어드립니다</p>
 
         <div className="big-drop" ref={dropAreaRef} role="button" tabIndex={0} onClick={openFilePicker}>
-          <span className="drop-icon">🖼</span>
+          <ImageIcon className="drop-icon" size={36} strokeWidth={1.25} />
           <span className="drop-text">클릭하거나 이미지를 드래그하세요</span>
           <span className="drop-hint">PNG · JPG · GIF · WebP</span>
         </div>
@@ -298,15 +304,15 @@ export default function App() {
               />
             </div>
             <div className="playback">
-              <button className="play-btn" title="이전 프레임" onClick={() => seek(-1)}>⏮</button>
+              <button className="play-btn" title="이전 프레임" onClick={() => seek(-1)}><SkipBack size={ICON_MD} /></button>
               <button
                 className="play-btn play-btn-main"
                 title="재생/정지"
                 onClick={togglePlay}
               >
-                {playing ? '⏸' : '▶'}
+                {playing ? <Pause size={ICON_MD} /> : <Play size={ICON_MD} />}
               </button>
-              <button className="play-btn" title="다음 프레임" onClick={() => seek(1)}>⏭</button>
+              <button className="play-btn" title="다음 프레임" onClick={() => seek(1)}><SkipForward size={ICON_MD} /></button>
             </div>
           </div>
         </div>
@@ -324,7 +330,7 @@ export default function App() {
               tabIndex={0}
               onClick={openFilePicker}
             >
-              <span style={{ fontSize: '15px' }}>🖼</span>
+              <ImageIcon size={ICON_MD} />
               <span className="upload-file-name">{fileName}</span>
             </div>
             {uploadError && <p className="upload-error">{uploadError}</p>}
@@ -370,14 +376,14 @@ export default function App() {
                 aria-pressed={String(flip)}
                 onClick={handleFlip}
               >
-                ↔ 좌우 반전
+                <FlipHorizontal2 size={ICON_SM} /> 좌우 반전
               </button>
               <button
                 className="toggle-btn"
                 aria-pressed={String(adjustMode)}
                 onClick={handleAdjust}
               >
-                ✥ 드래그 모드
+                <Move size={ICON_SM} /> 드래그 모드
               </button>
             </div>
           </div>
@@ -409,7 +415,7 @@ export default function App() {
           <div className="card">
             <p className="card-label">내보내기</p>
             <div className="export-row">
-              <button className="btn btn-ghost" onClick={handleReset}>↩ 초기화</button>
+              <button className="btn btn-ghost" onClick={handleReset}><RotateCcw size={ICON_SM} /> 초기화</button>
               <button className="btn btn-accent" disabled={exporting} onClick={() => rendererRef.current?.render()}>
                 {exportLabel}
               </button>
@@ -433,7 +439,7 @@ export default function App() {
           {gifUrl && <img className="result-img" src={gifUrl} alt="생성된 GIF" />}
           <div className="overlay-actions">
             <button className="btn btn-ghost" onClick={closeOverlay}>닫기</button>
-            <a className="download-link" href={gifUrl} download="petpet.gif">⬇ 다운로드</a>
+            <a className="download-link" href={gifUrl} download="petpet.gif"><Download size={ICON_SM} /> 다운로드</a>
           </div>
         </div>
       </div>
