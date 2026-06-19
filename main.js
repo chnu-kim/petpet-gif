@@ -39,6 +39,97 @@ const g = { ...DEFAULTS };
   const truncate = (str, len) =>
     str.length < len ? str : `${str.slice(0, ~~(len / 2))}⋯${str.slice(-(~~(len / 2)))}`;
 
+  const wireDropZone = (el, onDrop) => {
+    ["dragenter", "dragover", "dragleave", "drop"].forEach((ev) =>
+      el.addEventListener(ev, (e) => { e.preventDefault(); e.stopPropagation(); })
+    );
+    ["dragenter", "dragover"].forEach((ev) =>
+      el.addEventListener(ev, () => el.classList.add("highlight"))
+    );
+    ["dragleave", "drop"].forEach((ev) =>
+      el.addEventListener(ev, () => el.classList.remove("highlight"))
+    );
+    el.addEventListener("drop", (e) => onDrop(e.dataTransfer.files[0]));
+  };
+
+  const togglePressed = (btn) => {
+    const next = btn.getAttribute("aria-pressed") !== "true";
+    btn.setAttribute("aria-pressed", String(next));
+    return next;
+  };
+
+  // ── Default sprite (직접 그린 캐릭터, 외부 파일 의존성 없음) ───────────────
+  const createDefaultSprite = () => {
+    const c = document.createElement("canvas");
+    c.width = c.height = 200;
+    const cx = c.getContext("2d");
+
+    // 귀 (몸보다 먼저 그려야 뒤에 위치)
+    cx.fillStyle = "#FFCC4D";
+    cx.beginPath();
+    cx.moveTo(42, 62); cx.lineTo(28, 20); cx.lineTo(72, 48); cx.closePath();
+    cx.moveTo(158, 62); cx.lineTo(172, 20); cx.lineTo(128, 48); cx.closePath();
+    cx.fill();
+
+    // 귀 안쪽
+    cx.fillStyle = "#FFB3C6";
+    cx.beginPath();
+    cx.moveTo(46, 58); cx.lineTo(36, 30); cx.lineTo(65, 50); cx.closePath();
+    cx.moveTo(154, 58); cx.lineTo(164, 30); cx.lineTo(135, 50); cx.closePath();
+    cx.fill();
+
+    // 얼굴
+    cx.fillStyle = "#FFCC4D";
+    cx.beginPath();
+    cx.arc(100, 108, 82, 0, Math.PI * 2);
+    cx.fill();
+
+    // 뺨 홍조
+    cx.fillStyle = "rgba(255, 140, 140, 0.32)";
+    cx.beginPath();
+    cx.ellipse(62, 130, 24, 15, 0, 0, Math.PI * 2);
+    cx.ellipse(138, 130, 24, 15, 0, 0, Math.PI * 2);
+    cx.fill();
+
+    // 눈 흰자
+    cx.fillStyle = "#fff";
+    cx.beginPath();
+    cx.ellipse(76, 90, 18, 20, 0, 0, Math.PI * 2);
+    cx.ellipse(124, 90, 18, 20, 0, 0, Math.PI * 2);
+    cx.fill();
+
+    // 눈동자
+    cx.fillStyle = "#222";
+    cx.beginPath();
+    cx.arc(78, 92, 10, 0, Math.PI * 2);
+    cx.arc(126, 92, 10, 0, Math.PI * 2);
+    cx.fill();
+
+    // 눈 하이라이트
+    cx.fillStyle = "#fff";
+    cx.beginPath();
+    cx.arc(82, 87, 4, 0, Math.PI * 2);
+    cx.arc(130, 87, 4, 0, Math.PI * 2);
+    cx.fill();
+
+    // 코 (작은 삼각형)
+    cx.fillStyle = "#e07070";
+    cx.beginPath();
+    cx.moveTo(100, 112); cx.lineTo(94, 119); cx.lineTo(106, 119); cx.closePath();
+    cx.fill();
+
+    // 입 (고양이 스타일 W)
+    cx.strokeStyle = "#c06060";
+    cx.lineWidth = 2.5;
+    cx.lineCap = "round";
+    cx.beginPath();
+    cx.moveTo(94, 120); cx.lineTo(87, 127);
+    cx.moveTo(106, 120); cx.lineTo(113, 127);
+    cx.stroke();
+
+    return c.toDataURL();
+  };
+
   // ── ImageLoader ──────────────────────────────────────────────────────────────
   const ImageLoader = (onLoad, onError) => {
     const cache = document.createElement("canvas");
@@ -79,13 +170,11 @@ const g = { ...DEFAULTS };
     ctx.strokeStyle = "#ff0000";
     canvas.tabIndex = 0;
 
-    // Refresh sprite height proportionally when image changes
     const refreshSprite = () => {
       g.spriteHeight = g.spriteWidth * (sprite.naturalHeight / sprite.naturalWidth);
     };
     sprite.addEventListener("load", refreshSprite);
 
-    // Per-frame offsets applied to the subject image (squish/position change)
     const frameOffsets = [
       { x: 0,   y: 0,  w: 0,  h: 0   },
       { x: -4,  y: 12, w: 4,  h: -12 },
@@ -110,7 +199,6 @@ const g = { ...DEFAULTS };
       if (_ctx.globalAlpha !== 1) _ctx.globalAlpha = 1;
       _ctx.clearRect(0, 0, OUT_SIZE, OUT_SIZE);
 
-      // Draw subject image (flip if needed)
       _ctx.save();
       _ctx.translate(cf.dx, cf.dy);
       if (g.flip) {
@@ -121,7 +209,6 @@ const g = { ...DEFAULTS };
       if (showAdjust) _ctx.strokeRect(0, 0, cf.dw, cf.dh);
       _ctx.restore();
 
-      // Draw hand
       if (showAdjust) _ctx.globalAlpha = 0.75;
       _ctx.drawImage(
         hand,
@@ -157,7 +244,6 @@ const g = { ...DEFAULTS };
       tick();
     };
 
-    // ── Drag-to-move image position ─────────────────────────────────────────────
     let relX = 0, relY = 0, relScale = 1;
     let startX = 0, startY = 0, dragging = false;
 
@@ -216,7 +302,6 @@ const g = { ...DEFAULTS };
       });
     });
 
-    // Keyboard nudge when canvas is focused (tabIndex = 0 set above)
     const KEY_DELTAS = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
     canvas.addEventListener("keydown", (e) => {
       const moved = KEY_DELTAS[e.key];
@@ -237,10 +322,9 @@ const g = { ...DEFAULTS };
     const tempCtx = tempCanvas.getContext("2d", CANVAS_OPTIONS);
     tempCanvas.width = tempCanvas.height = OUT_SIZE;
 
-    // Replace transparent pixels with green key color for GIF transparency
     const fixTransparency = (data) => {
       for (let i = 0; i < data.length; i += 4) {
-        if (data[i + 1] > 250) data[i + 1] = 250; // clamp near-pure greens
+        if (data[i + 1] > 250) data[i + 1] = 250;
         if (data[i + 3] < 120) { data[i] = 0; data[i + 1] = 255; data[i + 2] = 0; }
         data[i + 3] = 255;
       }
@@ -274,14 +358,22 @@ const g = { ...DEFAULTS };
     const $hand    = new Image();
     $hand.crossOrigin = "Anonymous";
 
-    // Cache sprite slider elements — used in onSpriteMove hot path
     const $spriteXSlider = $("#spriteXSlider");
     const $spriteXVal    = $("#spriteXVal");
     const $spriteYSlider = $("#spriteYSlider");
     const $spriteYVal    = $("#spriteYVal");
 
+    // ── State ──────────────────────────────────────────────────────────────────
+    const $emptyState = $("#emptyState");
+    const $editor     = $("#editor");
+
+    const showEditor = () => {
+      $emptyState.style.display = "none";
+      $editor.style.display = "grid";
+    };
+
+    // ── Animation ─────────────────────────────────────────────────────────────
     const animation = PetPetAnimation($canvas, $hand, $preview, {
-      // Keep position sliders in sync with drag
       onSpriteMove: (x, y) => {
         const rx = Math.round(x), ry = Math.round(y);
         $spriteXSlider.value = rx;
@@ -293,15 +385,20 @@ const g = { ...DEFAULTS };
 
     const imageLoader = ImageLoader(
       (data) => {
+        showEditor();
         $preview.src = data;
         animation.tick();
       },
       () => {
-        $("#uploadError").textContent = "이미지를 불러올 수 없습니다!";
+        $("#uploadError").textContent = "이미지를 불러올 수 없습니다.";
+        $("#uploadErrorEditor").textContent = "이미지를 불러올 수 없습니다.";
       }
     );
 
     // ── Reset ──────────────────────────────────────────────────────────────────
+    const $flipBtn   = $("#toggleFlip");
+    const $adjustBtn = $("#toggleAdjust");
+
     const reset = () => {
       Object.assign(g, DEFAULTS);
       animation.refreshSprite();
@@ -315,39 +412,42 @@ const g = { ...DEFAULTS };
       $("#scale").value           = scPct;
       $("#scaleVal").textContent  = `${scPct}%`;
       $("#fps").value = $("#fpsVal").value = ~~(1000 / DEFAULTS.delay);
-      $("#toggleFlip").checked = false;
 
-      $spriteXSlider.value      = DEFAULTS.spriteX;
-      $spriteXVal.textContent   = DEFAULTS.spriteX;
-      $spriteYSlider.value      = DEFAULTS.spriteY;
-      $spriteYVal.textContent   = DEFAULTS.spriteY;
+      $spriteXSlider.value    = DEFAULTS.spriteX;
+      $spriteXVal.textContent = DEFAULTS.spriteX;
+      $spriteYSlider.value    = DEFAULTS.spriteY;
+      $spriteYVal.textContent = DEFAULTS.spriteY;
+
+      $flipBtn.setAttribute("aria-pressed", "false");
+      $adjustBtn.setAttribute("aria-pressed", "false");
+      $canvas.classList.remove("adjust-mode");
     };
 
     $("#reset").addEventListener("click", reset);
 
     // ── File upload ────────────────────────────────────────────────────────────
-    const $dropArea  = $("#dropArea");
-    const $fileInput = $("#uploadFile");
-    const $fileName  = $("#uploadFileName");
+    const $dropArea       = $("#dropArea");
+    const $dropAreaEditor = $("#dropAreaEditor");
+    const $fileInput      = $("#uploadFile");
+    const $fileName       = $("#uploadFileName");
 
     const handleFile = (file) => {
       if (!file?.type.startsWith("image/")) return;
       $("#uploadError").textContent = "";
-      $fileName.textContent = `🖼 ${truncate(file.name, 24)}`;
+      $("#uploadErrorEditor").textContent = "";
+      $fileName.textContent = truncate(file.name, 26);
       imageLoader.loadImage(URL.createObjectURL(file));
     };
 
-    ["dragenter", "dragover", "dragleave", "drop"].forEach((ev) =>
-      $dropArea.addEventListener(ev, (e) => { e.preventDefault(); e.stopPropagation(); })
-    );
-    ["dragenter", "dragover"].forEach((ev) =>
-      $dropArea.addEventListener(ev, () => $dropArea.classList.add("highlight"))
-    );
-    ["dragleave", "drop"].forEach((ev) =>
-      $dropArea.addEventListener(ev, () => $dropArea.classList.remove("highlight"))
-    );
-    $dropArea.addEventListener("drop", (e) => handleFile(e.dataTransfer.files[0]));
+    wireDropZone($dropArea, handleFile);
     $fileInput.addEventListener("change", () => handleFile($fileInput.files[0]));
+
+    // 에디터 이미지 변경 버튼 — 파일 input 직접 트리거
+    $dropAreaEditor.addEventListener("click", (e) => {
+      e.preventDefault();
+      $fileInput.click();
+    });
+    wireDropZone($dropAreaEditor, handleFile);
 
     const loadFromUrl = () => {
       const url = $("#uploadUrl").value.trim();
@@ -408,15 +508,18 @@ const g = { ...DEFAULTS };
       animation.tick();
     });
 
-    $("#toggleFlip").addEventListener("change", (e) => {
-      g.flip = e.target.checked;
+    // 좌우 반전 — 토글 버튼
+    $flipBtn.addEventListener("click", () => {
+      g.flip = togglePressed($flipBtn);
       animation.tick();
     });
 
-    $("#toggleAdjust").addEventListener("click", (e) => {
-      $canvas.classList.toggle("adjust-mode", e.target.checked);
-      if (e.target.checked) togglePlay(true);
-      animation.toggleAdjust();
+    // 드래그 모드 — 토글 버튼
+    $adjustBtn.addEventListener("click", () => {
+      const next = togglePressed($adjustBtn);
+      $canvas.classList.toggle("adjust-mode", next);
+      if (next) togglePlay(true);
+      animation.toggleAdjust(next);
     });
 
     // ── Speed ──────────────────────────────────────────────────────────────────
@@ -437,11 +540,12 @@ const g = { ...DEFAULTS };
     $fpsVal.addEventListener("input", (e) => { $fps.value = e.target.value; });
 
     // ── GIF Export ─────────────────────────────────────────────────────────────
-    const $exportBtn     = $("#export");
-    const $info          = $("#info");
-    const $result        = $("#result");
-    const $download      = $("#download");
-    const $outputSection = $("#outputSection");
+    const $exportBtn  = $("#export");
+    const $info       = $("#info");
+    const $result     = $("#result");
+    const $download   = $("#download");
+    const $overlay    = $("#overlay");
+    const $overlayMeta = $("#overlayMeta");
     let exportBtnText = "";
     let gifStartTime  = 0;
 
@@ -452,28 +556,36 @@ const g = { ...DEFAULTS };
         URL.revokeObjectURL($result.src);
         $exportBtn.disabled = true;
         exportBtnText = $exportBtn.textContent;
+        $exportBtn.textContent = "생성 중…";
       },
       (p) => {
-        const pct = `${Math.round(p * 100)}%`;
-        $exportBtn.textContent = pct;
-        $info.textContent = pct;
+        const pcts = `${Math.round(p * 100)}%`;
+        $exportBtn.textContent = pcts;
+        $info.textContent = pcts;
       },
       (blob, t) => {
-        const sec  = ((t - gifStartTime) / 1000).toFixed(2);
-        const size = (blob.size / 1000).toFixed(1);
-        $info.textContent = `완료! ${sec}초, ${size}KB`;
+        const sec   = ((t - gifStartTime) / 1000).toFixed(2);
+        const size  = (blob.size / 1000).toFixed(1);
+        const label = `${sec}초 · ${size}KB`;
+        $info.textContent = label;
         $exportBtn.textContent = exportBtnText;
         $exportBtn.disabled = false;
 
         const url = URL.createObjectURL(blob);
         $result.src = url;
         $download.href = url;
-        $outputSection.style.display = "block";
-        $outputSection.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        $overlayMeta.textContent = label;
+        $overlay.classList.add("open");
       }
     );
 
     $exportBtn.addEventListener("click", () => renderer.render());
+
+    // 오버레이 닫기
+    $("#closeOverlay").addEventListener("click", () => $overlay.classList.remove("open"));
+    $overlay.addEventListener("click", (e) => {
+      if (e.target === $overlay) $overlay.classList.remove("open");
+    });
 
     // ── Theme toggle ───────────────────────────────────────────────────────────
     const $themeBtn = $("#themeToggle");
@@ -482,19 +594,21 @@ const g = { ...DEFAULTS };
 
     const applyTheme = (t) => {
       document.documentElement.setAttribute("data-theme", t);
-      $themeBtn.textContent = t === "dark" ? "☀️ 라이트" : "🌙 다크";
+      $themeBtn.textContent = t === "dark" ? "☀️" : "🌙";
       localStorage.setItem("petpet-theme", t);
     };
 
     applyTheme(theme);
-    $themeBtn.addEventListener("click", () => { theme = theme === "dark" ? "light" : "dark"; applyTheme(theme); });
+    $themeBtn.addEventListener("click", () => {
+      theme = theme === "dark" ? "light" : "dark";
+      applyTheme(theme);
+    });
 
     // ── Load assets ────────────────────────────────────────────────────────────
     $hand.src = "./img/sprite.png";
-    imageLoader.loadImage("./img/sample.png");
+    imageLoader.loadImage(createDefaultSprite());
     window.addEventListener("load", () => animation.play());
 
-    // Expose for console debugging
     window.petpet = { g, animation, imageLoader, renderer, reset, DEFAULTS };
   });
 })();

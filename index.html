@@ -3,39 +3,37 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PetPet Generator ✋</title>
+  <title>PetPet Generator</title>
   <style>
-    *, *::before, *::after {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg: #f8f9fa;
+      --bg: #f7f7f7;
       --bg-panel: #ffffff;
-      --bg-input: #f1f3f5;
-      --text: #212529;
-      --text-muted: #6c757d;
-      --accent: #e03131;
-      --accent-hover: #c92a2a;
-      --border: #dee2e6;
-      --canvas-bg: #e9ecef;
-      --shadow: rgba(0,0,0,0.08);
-      --header-h: 52px;
+      --bg-input: #f0f0f0;
+      --text: #111111;
+      --text-muted: #888888;
+      --accent: #6366f1;
+      --accent-hover: #4f46e5;
+      --accent-subtle: #eef2ff;
+      --border: #e8e8e8;
+      --border-strong: #d0d0d0;
+      --shadow: 0 1px 3px rgba(0,0,0,.06), 0 8px 24px rgba(0,0,0,.04);
+      --header-h: 56px;
     }
 
     [data-theme="dark"] {
-      --bg: #0f0e17;
-      --bg-panel: #1a1a2e;
-      --bg-input: #16213e;
-      --text: #fffffe;
-      --text-muted: #a7a9be;
-      --accent: #e94560;
-      --accent-hover: #ff6b81;
-      --border: #2c3e50;
-      --canvas-bg: #16213e;
-      --shadow: rgba(0,0,0,0.4);
+      --bg: #0f0f0f;
+      --bg-panel: #1a1a1a;
+      --bg-input: #252525;
+      --text: #f0f0f0;
+      --text-muted: #777777;
+      --accent: #818cf8;
+      --accent-hover: #6366f1;
+      --accent-subtle: rgba(99,102,241,.12);
+      --border: #2a2a2a;
+      --border-strong: #3a3a3a;
+      --shadow: 0 1px 3px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.18);
     }
 
     body {
@@ -53,58 +51,211 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 0 20px;
+      padding: 0 24px;
       border-bottom: 1px solid var(--border);
       background: var(--bg-panel);
-      box-shadow: 0 1px 4px var(--shadow);
       position: sticky;
       top: 0;
-      z-index: 20;
+      z-index: 100;
     }
 
-    header h1 { font-size: 1.15em; font-weight: 700; }
-
-    #themeToggle {
-      background: none;
-      border: 1px solid var(--border);
-      color: var(--text);
-      border-radius: 20px;
-      padding: 4px 14px;
-      cursor: pointer;
-      font-size: 0.82em;
-      transition: background 0.2s;
-    }
-    #themeToggle:hover { background: var(--bg-input); }
-
-    /* ── Main grid ── */
-    .main-grid {
-      display: grid;
-      grid-template-columns: 360px 1fr;
-      gap: 16px;
-      padding: 16px;
-      max-width: 1080px;
-      margin: 0 auto;
-      /* Minimum height so sticky works when controls list is short */
-      min-height: calc(100vh - var(--header-h));
-    }
-
-    /* ── Canvas section — sticky within the left grid column ── */
-    .canvas-section {
-      position: sticky;
-      top: calc(var(--header-h) + 16px);
-      align-self: start;          /* crucial for sticky in a grid */
+    .header-brand {
       display: flex;
-      flex-direction: column;
       align-items: center;
       gap: 10px;
     }
 
-    .canvas-wrapper {
-      background: var(--canvas-bg);
-      border: 2px solid var(--border);
-      border-radius: 12px;
-      padding: 16px;
-      box-shadow: 0 3px 14px var(--shadow);
+    .brand-icon {
+      width: 30px;
+      height: 30px;
+      background: var(--accent);
+      border-radius: 9px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      flex-shrink: 0;
+    }
+
+    header h1 {
+      font-size: 0.95em;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+
+    #themeToggle {
+      width: 36px;
+      height: 36px;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      cursor: pointer;
+      font-size: 15px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s;
+    }
+    #themeToggle:hover { background: var(--border); }
+
+    /* ── Empty state ── */
+    #emptyState {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: calc(100vh - var(--header-h));
+      padding: 48px 24px;
+    }
+
+    .empty-title {
+      font-size: 1.6em;
+      font-weight: 700;
+      letter-spacing: -0.025em;
+      margin-bottom: 8px;
+      text-align: center;
+    }
+
+    .empty-sub {
+      font-size: 0.88em;
+      color: var(--text-muted);
+      margin-bottom: 36px;
+      text-align: center;
+    }
+
+    .big-drop {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      width: 100%;
+      max-width: 480px;
+      height: 220px;
+      border: 2px dashed var(--border-strong);
+      border-radius: 20px;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      background: var(--bg-panel);
+    }
+    .big-drop:hover, .big-drop.highlight {
+      border-color: var(--accent);
+      background: var(--accent-subtle);
+    }
+
+    .drop-icon { font-size: 36px; line-height: 1; opacity: 0.7; }
+
+    .drop-text {
+      font-size: 0.93em;
+      font-weight: 500;
+      color: var(--text);
+    }
+
+    .drop-hint {
+      font-size: 0.78em;
+      color: var(--text-muted);
+    }
+
+    .or-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      width: 100%;
+      max-width: 480px;
+      margin: 22px 0;
+      font-size: 0.8em;
+      color: var(--text-muted);
+    }
+    .or-row::before, .or-row::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    .url-row {
+      display: flex;
+      gap: 8px;
+      width: 100%;
+      max-width: 480px;
+    }
+
+    .url-input {
+      flex: 1;
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 14px;
+      color: var(--text);
+      font-size: 0.87em;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .url-input:focus { border-color: var(--accent); }
+    .url-input::placeholder { color: var(--text-muted); }
+
+    .upload-error {
+      font-size: 0.78em;
+      color: #ef4444;
+      min-height: 1.1em;
+      margin-top: 8px;
+      text-align: center;
+    }
+
+    /* ── Editor ── */
+    #editor {
+      display: none;
+      grid-template-columns: 360px 1fr;
+      gap: 20px;
+      padding: 20px;
+      max-width: 1100px;
+      margin: 0 auto;
+      min-height: calc(100vh - var(--header-h));
+    }
+
+    /* ── Canvas column ── */
+    .canvas-col {
+      position: sticky;
+      top: calc(var(--header-h) + 20px);
+      align-self: start;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .canvas-card {
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 18px;
+      box-shadow: var(--shadow);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .canvas-frame {
+      border-radius: 10px;
+      overflow: hidden;
+      background-color: #fff;
+      background-image:
+        linear-gradient(45deg, #e4e4e4 25%, transparent 25%),
+        linear-gradient(-45deg, #e4e4e4 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #e4e4e4 75%),
+        linear-gradient(-45deg, transparent 75%, #e4e4e4 75%);
+      background-size: 14px 14px;
+      background-position: 0 0, 0 7px, 7px -7px, -7px 0;
+      line-height: 0;
+    }
+
+    [data-theme="dark"] .canvas-frame {
+      background-color: #1a1a1a;
+      background-image:
+        linear-gradient(45deg, #2a2a2a 25%, transparent 25%),
+        linear-gradient(-45deg, #2a2a2a 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #2a2a2a 75%),
+        linear-gradient(-45deg, transparent 75%, #2a2a2a 75%);
     }
 
     #canvas {
@@ -113,438 +264,471 @@
       height: 320px;
       image-rendering: pixelated;
       image-rendering: crisp-edges;
-      border-radius: 4px;
       cursor: default;
     }
-
     #canvas.adjust-mode { cursor: move; }
 
-    /* ── Playback ── */
     .playback {
       display: flex;
-      gap: 8px;
+      align-items: center;
+      gap: 6px;
     }
 
     .play-btn {
-      background: var(--bg-panel);
-      border: 1px solid var(--border);
-      color: var(--text);
-      border-radius: 8px;
-      padding: 6px 16px;
-      cursor: pointer;
-      font-size: 1em;
-      transition: background 0.15s, transform 0.1s;
-    }
-    .play-btn:hover { background: var(--bg-input); }
-    .play-btn:active { transform: scale(0.95); }
-
-    /* ── Export row ── */
-    .export-row {
+      height: 40px;
       display: flex;
-      flex-direction: column;
       align-items: center;
-      gap: 6px;
-      width: 100%;
+      justify-content: center;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      cursor: pointer;
+      font-size: 13px;
+      transition: background 0.15s, transform 0.1s;
+      color: var(--text);
+      padding: 0 14px;
     }
+    .play-btn:hover { background: var(--border); }
+    .play-btn:active { transform: scale(0.93); }
 
-    #info {
-      font-size: 0.78em;
-      color: var(--text-muted);
-      min-height: 1.1em;
-      text-align: center;
+    #play {
+      padding: 0 20px;
+      background: var(--accent);
+      color: white;
+      border-color: transparent;
+      font-size: 15px;
     }
+    #play:hover { background: var(--accent-hover); }
 
-    /* ── Controls section ── */
-    .controls-section {
+    /* ── Controls column ── */
+    .controls-col {
       display: flex;
       flex-direction: column;
       gap: 10px;
       padding-bottom: 24px;
     }
 
-    /* ── Panel ── */
-    .panel {
+    .card {
       background: var(--bg-panel);
       border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 13px 15px;
-      box-shadow: 0 2px 8px var(--shadow);
+      border-radius: 16px;
+      padding: 16px 18px;
+      box-shadow: var(--shadow);
     }
 
-    .panel-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 10px;
-    }
-
-    .panel h3 {
-      font-size: 0.73em;
+    .card-label {
+      font-size: 0.7em;
       font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 0.06em;
+      letter-spacing: 0.08em;
       color: var(--text-muted);
-      margin-bottom: 10px;
+      margin-bottom: 14px;
     }
 
-    .panel-header h3 { margin-bottom: 0; }
-
-    /* ── Control row ── */
-    .control {
+    /* ── Image card ── */
+    .change-img-btn {
       display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text);
+      font-size: 0.85em;
+      cursor: pointer;
+      width: 100%;
+      transition: background 0.15s;
+      text-align: left;
+    }
+    .change-img-btn:hover,
+    .change-img-btn.highlight { background: var(--border-strong); border-color: var(--accent); }
+
+    #uploadFileName {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--text-muted);
+    }
+
+    /* ── Sliders ── */
+    .control {
+      display: grid;
+      grid-template-columns: 68px 1fr 52px;
       align-items: center;
       gap: 10px;
       padding: 3px 0;
     }
 
-    .control > .lbl {
-      flex: 0 0 64px;
+    .ctrl-lbl {
       font-size: 0.83em;
       color: var(--text-muted);
     }
 
-    .control > input[type="range"] {
+    input[type="range"] {
       -webkit-appearance: none;
       appearance: none;
-      flex: 1;
-      height: 4px;
-      background: var(--border);
-      border-radius: 2px;
+      height: 5px;
+      background: var(--bg-input);
+      border-radius: 3px;
       cursor: pointer;
       outline: none;
+      width: 100%;
+      border: 1px solid var(--border);
     }
 
-    .control > input[type="range"]::-webkit-slider-thumb {
+    input[type="range"]::-webkit-slider-thumb {
       -webkit-appearance: none;
-      width: 15px;
-      height: 15px;
+      width: 18px;
+      height: 18px;
       border-radius: 50%;
       background: var(--accent);
       cursor: pointer;
+      box-shadow: 0 1px 4px rgba(0,0,0,.2);
     }
 
-    .control > input[type="range"]::-moz-range-thumb {
-      width: 15px;
-      height: 15px;
+    input[type="range"]::-moz-range-thumb {
+      width: 18px;
+      height: 18px;
       border-radius: 50%;
       background: var(--accent);
       cursor: pointer;
       border: none;
+      box-shadow: 0 1px 4px rgba(0,0,0,.2);
     }
 
-    .control > .val {
-      flex: 0 0 44px;
+    .ctrl-val {
       text-align: right;
       font-size: 0.82em;
       font-variant-numeric: tabular-nums;
-    }
-
-    /* ── Checkbox ── */
-    .control-check {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 4px 0;
-      font-size: 0.83em;
-      cursor: pointer;
-      user-select: none;
-    }
-
-    .control-check input[type="checkbox"] {
-      accent-color: var(--accent);
-      width: 14px;
-      height: 14px;
-      cursor: pointer;
-    }
-
-    /* ── Adjust label ── */
-    .adjust-label {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 0.78em;
-      cursor: pointer;
       color: var(--text-muted);
-      user-select: none;
     }
 
-    .adjust-label input { accent-color: var(--accent); }
+    .divider { height: 1px; background: var(--border); margin: 10px 0; }
 
-    /* ── Upload ── */
-    label.drop-area {
-      display: block;
-      border: 2px dashed var(--border);
+    /* ── Toggle buttons ── */
+    .toggle-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 2px;
+    }
+
+    .toggle-btn {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 7px 13px;
+      border: 1px solid var(--border);
       border-radius: 8px;
-      padding: 16px;
-      text-align: center;
-      cursor: pointer;
-      transition: border-color 0.2s, background 0.2s;
-      margin-bottom: 8px;
-    }
-
-    label.drop-area:hover,
-    label.drop-area.highlight {
-      border-color: var(--accent);
       background: var(--bg-input);
-    }
-
-    #uploadFileName {
-      font-size: 0.83em;
       color: var(--text-muted);
+      font-size: 0.82em;
+      cursor: pointer;
+      transition: all 0.15s;
+      user-select: none;
+    }
+    .toggle-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .toggle-btn[aria-pressed="true"] {
+      background: var(--accent-subtle);
+      border-color: var(--accent);
+      color: var(--accent);
+      font-weight: 500;
     }
 
-    .url-row {
-      display: flex;
-      gap: 8px;
-    }
-
-    .url-row input {
-      flex: 1;
+    /* ── FPS number input ── */
+    .fps-number {
+      width: 52px;
       background: var(--bg-input);
       border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 6px 10px;
+      border-radius: 8px;
+      padding: 4px 6px;
       color: var(--text);
       font-size: 0.83em;
+      text-align: center;
+      outline: none;
     }
-
-    .url-row input:focus {
-      outline: 2px solid var(--accent);
-      outline-offset: -1px;
-    }
-
-    .upload-error {
-      font-size: 0.78em;
-      color: #e03131;
-      min-height: 1.1em;
-      margin-top: 5px;
-    }
+    .fps-number:focus { border-color: var(--accent); }
 
     /* ── Buttons ── */
     .btn {
       border: none;
-      border-radius: 8px;
-      padding: 8px 18px;
+      border-radius: 10px;
+      padding: 10px 18px;
       font-size: 0.87em;
       font-weight: 600;
       cursor: pointer;
       transition: background 0.15s, transform 0.1s;
+      white-space: nowrap;
     }
-
     .btn:active { transform: scale(0.97); }
 
-    .btn-primary {
+    .btn-accent {
       background: var(--accent);
-      color: white;
-      width: 100%;
-      max-width: 210px;
-      padding: 9px;
+      color: #fff;
+      flex: 1;
+      padding: 11px;
     }
-    .btn-primary:hover { background: var(--accent-hover); }
-    .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+    .btn-accent:hover { background: var(--accent-hover); }
+    .btn-accent:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 
-    .btn-secondary {
+    .btn-ghost {
       background: var(--bg-input);
-      color: var(--text);
+      color: var(--text-muted);
       border: 1px solid var(--border);
     }
-    .btn-secondary:hover { background: var(--border); }
+    .btn-ghost:hover { background: var(--border); color: var(--text); }
 
-    .btn-sm { padding: 5px 12px; font-size: 0.8em; }
-
-    /* ── FPS number input ── */
-    .fps-input {
-      width: 50px;
-      background: var(--bg-input);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 3px 5px;
-      color: var(--text);
-      font-size: 0.82em;
-      text-align: center;
-    }
-
-    /* ── Divider ── */
-    .divider {
-      height: 1px;
-      background: var(--border);
-      margin: 8px 0;
-    }
-
-    /* ── Bottom row ── */
-    .btn-row {
+    .export-row {
       display: flex;
-      justify-content: flex-end;
+      gap: 8px;
+      align-items: center;
     }
 
-    /* ── GIF result panel ── */
-    .output-panel {
+    #info {
+      font-size: 0.78em;
+      color: var(--text-muted);
+      text-align: center;
+      min-height: 1.1em;
+      margin-top: 6px;
+    }
+
+    /* ── Overlay ── */
+    #overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.65);
+      z-index: 200;
+      align-items: center;
+      justify-content: center;
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+    }
+    #overlay.open { display: flex; }
+
+    .overlay-card {
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 28px;
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 12px;
+      gap: 18px;
+      box-shadow: 0 32px 80px rgba(0,0,0,.35);
+      max-width: 360px;
+      width: calc(100% - 40px);
+      animation: fadeUp 0.22s ease;
     }
 
-    /* 2× display, checkerboard shows transparent areas, accent border */
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(20px) scale(0.97); }
+      to   { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    .overlay-header {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .overlay-label {
+      font-size: 0.7em;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+    }
+
+    #overlayMeta {
+      font-size: 0.78em;
+      color: var(--text-muted);
+    }
+
     #result {
       width: 224px;
       height: 224px;
       image-rendering: pixelated;
       image-rendering: crisp-edges;
-      border: 3px solid var(--accent);
-      border-radius: 6px;
-      box-shadow: 0 0 0 1px var(--border), 0 4px 16px var(--shadow);
-      background-color: #ffffff;
+      border-radius: 10px;
+      background-color: #fff;
       background-image:
-        linear-gradient(45deg, #d0d0d0 25%, transparent 25%),
-        linear-gradient(-45deg, #d0d0d0 25%, transparent 25%),
-        linear-gradient(45deg, transparent 75%, #d0d0d0 75%),
-        linear-gradient(-45deg, transparent 75%, #d0d0d0 75%);
-      background-size: 12px 12px;
-      background-position: 0 0, 0 6px, 6px -6px, -6px 0;
+        linear-gradient(45deg, #e0e0e0 25%, transparent 25%),
+        linear-gradient(-45deg, #e0e0e0 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #e0e0e0 75%),
+        linear-gradient(-45deg, transparent 75%, #e0e0e0 75%);
+      background-size: 14px 14px;
+      background-position: 0 0, 0 7px, 7px -7px, -7px 0;
+    }
+
+    .overlay-actions {
+      display: flex;
+      gap: 8px;
+      width: 100%;
     }
 
     #download {
-      display: inline-flex;
+      flex: 1;
+      display: flex;
       align-items: center;
+      justify-content: center;
       gap: 6px;
-      padding: 9px 24px;
+      padding: 11px 20px;
       background: var(--accent);
-      color: white;
+      color: #fff;
       text-decoration: none;
-      border-radius: 8px;
+      border-radius: 10px;
       font-weight: 600;
-      font-size: 0.88em;
-      transition: background 0.2s;
+      font-size: 0.87em;
+      transition: background 0.15s;
     }
     #download:hover { background: var(--accent-hover); }
 
     /* ── Mobile ── */
-    @media (max-width: 760px) {
-      .main-grid {
-        grid-template-columns: 1fr;
-        min-height: auto;
-      }
-
-      .canvas-section {
-        position: static; /* no sticky on mobile — single column */
-      }
-
-      #canvas {
-        width: min(80vw, 320px);
-        height: min(80vw, 320px);
-      }
+    @media (max-width: 800px) {
+      #editor { grid-template-columns: 1fr; }
+      .canvas-col { position: static; }
+      #canvas { width: min(80vw, 320px); height: min(80vw, 320px); }
+      .canvas-frame { width: min(80vw, 320px); }
     }
   </style>
 </head>
 <body>
   <header>
-    <h1>✋ PetPet Generator</h1>
-    <button id="themeToggle">☀️ 라이트</button>
+    <div class="header-brand">
+      <div class="brand-icon">✋</div>
+      <h1>PetPet Generator</h1>
+    </div>
+    <button id="themeToggle" title="테마 전환">🌙</button>
   </header>
 
-  <div class="main-grid">
+  <!-- ── 빈 상태 ── -->
+  <div id="emptyState">
+    <p class="empty-title">PetPet GIF 만들기</p>
+    <p class="empty-sub">이미지를 올리면 손이 쓰다듬는 GIF를 만들어드립니다</p>
 
-    <!-- ── Canvas Section (sticky) ── -->
-    <section class="canvas-section">
-      <div class="canvas-wrapper">
-        <canvas id="canvas" width="112" height="112"></canvas>
-        <img id="uploadPreview" style="display:none" alt="">
+    <label class="big-drop" id="dropArea">
+      <span class="drop-icon">🖼</span>
+      <span class="drop-text">클릭하거나 이미지를 드래그하세요</span>
+      <span class="drop-hint">PNG · JPG · GIF · WebP</span>
+      <input type="file" id="uploadFile" accept="image/*" style="display:none">
+    </label>
+
+    <div class="or-row">또는</div>
+
+    <div class="url-row">
+      <input class="url-input" type="text" id="uploadUrl" placeholder="이미지 URL 붙여넣기">
+      <button class="btn btn-ghost" id="uploadUrlBtn">불러오기</button>
+    </div>
+    <p class="upload-error" id="uploadError"></p>
+  </div>
+
+  <!-- ── 에디터 ── -->
+  <div id="editor">
+
+    <!-- 캔버스 -->
+    <div class="canvas-col">
+      <div class="canvas-card">
+        <div class="canvas-frame">
+          <canvas id="canvas" width="112" height="112"></canvas>
+          <img id="uploadPreview" style="display:none" alt="">
+        </div>
+        <div class="playback">
+          <button class="play-btn" id="prev" title="이전 프레임">⏮</button>
+          <button class="play-btn" id="play" title="재생/정지">⏸</button>
+          <button class="play-btn" id="next" title="다음 프레임">⏭</button>
+        </div>
       </div>
+    </div>
 
-      <div class="playback">
-        <button class="play-btn" id="prev">⏮</button>
-        <button class="play-btn" id="play">⏸</button>
-        <button class="play-btn" id="next">⏭</button>
-      </div>
+    <!-- 컨트롤 -->
+    <div class="controls-col">
 
-      <div class="export-row">
-        <button class="btn btn-primary" id="export">✨ GIF 생성</button>
-        <span id="info"></span>
-      </div>
-    </section>
-
-    <!-- ── Controls Section ── -->
-    <section class="controls-section">
-
-      <!-- Upload -->
-      <div class="panel">
-        <h3>이미지 업로드</h3>
-        <label class="drop-area" id="dropArea">
-          <span id="uploadFileName">🖼 드래그하거나 클릭해서 이미지 업로드</span>
-          <input type="file" id="uploadFile" accept="image/*" style="display:none">
+      <!-- 이미지 변경 -->
+      <div class="card">
+        <p class="card-label">이미지</p>
+        <label class="change-img-btn" id="dropAreaEditor">
+          <span style="font-size:15px">🖼</span>
+          <span id="uploadFileName">이미지 변경</span>
         </label>
-        <div class="url-row">
-          <input type="text" id="uploadUrl" placeholder="이미지 URL 직접 입력">
-          <button class="btn btn-secondary btn-sm" id="uploadUrlBtn">불러오기</button>
-        </div>
-        <p class="upload-error" id="uploadError"></p>
+        <p class="upload-error" id="uploadErrorEditor"></p>
       </div>
 
-      <!-- Image controls -->
-      <div class="panel">
-        <div class="panel-header">
-          <h3>이미지 조절</h3>
-          <label class="adjust-label">
-            <input type="checkbox" id="toggleAdjust"> 드래그 모드
-          </label>
-        </div>
+      <!-- 이미지 조절 -->
+      <div class="card">
+        <p class="card-label">조절</p>
 
         <div class="control">
-          <span class="lbl">크기</span>
+          <span class="ctrl-lbl">크기</span>
           <input type="range" id="scale" min="20" max="200" value="87">
-          <span class="val" id="scaleVal">87%</span>
+          <span class="ctrl-val" id="scaleVal">87%</span>
         </div>
         <div class="control">
-          <span class="lbl">X 위치</span>
+          <span class="ctrl-lbl">X 위치</span>
           <input type="range" id="spriteXSlider" min="-112" max="224" value="14">
-          <span class="val" id="spriteXVal">14</span>
+          <span class="ctrl-val" id="spriteXVal">14</span>
         </div>
         <div class="control">
-          <span class="lbl">Y 위치</span>
+          <span class="ctrl-lbl">Y 위치</span>
           <input type="range" id="spriteYSlider" min="-112" max="224" value="20">
-          <span class="val" id="spriteYVal">20</span>
+          <span class="ctrl-val" id="spriteYVal">20</span>
         </div>
 
         <div class="divider"></div>
 
         <div class="control">
-          <span class="lbl">눌림</span>
+          <span class="ctrl-lbl">눌림</span>
           <input type="range" id="squish" min="100" max="300" value="125">
-          <span class="val" id="squishVal">125%</span>
+          <span class="ctrl-val" id="squishVal">125%</span>
         </div>
 
-        <label class="control-check">
-          <input type="checkbox" id="toggleFlip">
-          좌우 반전
-        </label>
+        <div class="divider"></div>
+
+        <div class="toggle-row">
+          <button class="toggle-btn" id="toggleFlip" aria-pressed="false">↔ 좌우 반전</button>
+          <button class="toggle-btn" id="toggleAdjust" aria-pressed="false">✥ 드래그 모드</button>
+        </div>
       </div>
 
-      <!-- Speed -->
-      <div class="panel">
-        <h3>재생 속도</h3>
+      <!-- 속도 -->
+      <div class="card">
+        <p class="card-label">재생 속도</p>
         <div class="control">
-          <span class="lbl">FPS</span>
+          <span class="ctrl-lbl">FPS</span>
           <input type="range" id="fps" min="2" max="60" value="16">
-          <input type="number" class="fps-input" id="fpsVal" min="2" max="60" value="16">
+          <input type="number" class="fps-number" id="fpsVal" min="2" max="60" value="16">
         </div>
       </div>
 
-      <!-- GIF result (hidden until generated) -->
-      <div class="panel" id="outputSection" style="display:none">
-        <h3>생성된 GIF</h3>
-        <div class="output-panel">
-          <img id="result" alt="생성된 GIF">
-          <a id="download" href="#" download="petpet.gif">💾 다운로드</a>
+      <!-- 내보내기 -->
+      <div class="card">
+        <p class="card-label">내보내기</p>
+        <div class="export-row">
+          <button class="btn btn-ghost" id="reset">↩ 초기화</button>
+          <button class="btn btn-accent" id="export">GIF 생성</button>
         </div>
+        <p id="info"></p>
       </div>
 
-      <!-- Reset -->
-      <div class="btn-row">
-        <button class="btn btn-secondary" id="reset">↩ 초기화</button>
-      </div>
+    </div>
+  </div>
 
-    </section>
+  <!-- ── GIF 결과 오버레이 ── -->
+  <div id="overlay">
+    <div class="overlay-card">
+      <div class="overlay-header">
+        <span class="overlay-label">생성 완료</span>
+        <span id="overlayMeta"></span>
+      </div>
+      <img id="result" alt="생성된 GIF">
+      <div class="overlay-actions">
+        <button class="btn btn-ghost" id="closeOverlay">닫기</button>
+        <a id="download" href="#" download="petpet.gif">다운로드</a>
+      </div>
+    </div>
   </div>
 
   <script src="requestInterval.js"></script>
