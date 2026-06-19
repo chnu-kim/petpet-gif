@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="ko" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PetPet Generator ✋</title>
+  <style>
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --bg: #f8f9fa;
+      --bg-panel: #ffffff;
+      --bg-input: #f1f3f5;
+      --text: #212529;
+      --text-muted: #6c757d;
+      --accent: #e03131;
+      --accent-hover: #c92a2a;
+      --border: #dee2e6;
+      --canvas-bg: #e9ecef;
+      --shadow: rgba(0,0,0,0.08);
+      --header-h: 52px;
+    }
+
+    [data-theme="dark"] {
+      --bg: #0f0e17;
+      --bg-panel: #1a1a2e;
+      --bg-input: #16213e;
+      --text: #fffffe;
+      --text-muted: #a7a9be;
+      --accent: #e94560;
+      --accent-hover: #ff6b81;
+      --border: #2c3e50;
+      --canvas-bg: #16213e;
+      --shadow: rgba(0,0,0,0.4);
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+      min-height: 100vh;
+    }
+
+    /* ── Header ── */
+    header {
+      height: var(--header-h);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 20px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-panel);
+      box-shadow: 0 1px 4px var(--shadow);
+      position: sticky;
+      top: 0;
+      z-index: 20;
+    }
+
+    header h1 { font-size: 1.15em; font-weight: 700; }
+
+    #themeToggle {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 20px;
+      padding: 4px 14px;
+      cursor: pointer;
+      font-size: 0.82em;
+      transition: background 0.2s;
+    }
+    #themeToggle:hover { background: var(--bg-input); }
+
+    /* ── Main grid ── */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 16px;
+      padding: 16px;
+      max-width: 1080px;
+      margin: 0 auto;
+      /* Minimum height so sticky works when controls list is short */
+      min-height: calc(100vh - var(--header-h));
+    }
+
+    /* ── Canvas section — sticky within the left grid column ── */
+    .canvas-section {
+      position: sticky;
+      top: calc(var(--header-h) + 16px);
+      align-self: start;          /* crucial for sticky in a grid */
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .canvas-wrapper {
+      background: var(--canvas-bg);
+      border: 2px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      box-shadow: 0 3px 14px var(--shadow);
+    }
+
+    #canvas {
+      display: block;
+      width: 320px;
+      height: 320px;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      border-radius: 4px;
+      cursor: default;
+    }
+
+    #canvas.adjust-mode { cursor: move; }
+
+    /* ── Playback ── */
+    .playback {
+      display: flex;
+      gap: 8px;
+    }
+
+    .play-btn {
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 6px 16px;
+      cursor: pointer;
+      font-size: 1em;
+      transition: background 0.15s, transform 0.1s;
+    }
+    .play-btn:hover { background: var(--bg-input); }
+    .play-btn:active { transform: scale(0.95); }
+
+    /* ── Export row ── */
+    .export-row {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      width: 100%;
+    }
+
+    #info {
+      font-size: 0.78em;
+      color: var(--text-muted);
+      min-height: 1.1em;
+      text-align: center;
+    }
+
+    /* ── Controls section ── */
+    .controls-section {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding-bottom: 24px;
+    }
+
+    /* ── Panel ── */
+    .panel {
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 13px 15px;
+      box-shadow: 0 2px 8px var(--shadow);
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+
+    .panel h3 {
+      font-size: 0.73em;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      margin-bottom: 10px;
+    }
+
+    .panel-header h3 { margin-bottom: 0; }
+
+    /* ── Control row ── */
+    .control {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 3px 0;
+    }
+
+    .control > .lbl {
+      flex: 0 0 64px;
+      font-size: 0.83em;
+      color: var(--text-muted);
+    }
+
+    .control > input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      flex: 1;
+      height: 4px;
+      background: var(--border);
+      border-radius: 2px;
+      cursor: pointer;
+      outline: none;
+    }
+
+    .control > input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 15px;
+      height: 15px;
+      border-radius: 50%;
+      background: var(--accent);
+      cursor: pointer;
+    }
+
+    .control > input[type="range"]::-moz-range-thumb {
+      width: 15px;
+      height: 15px;
+      border-radius: 50%;
+      background: var(--accent);
+      cursor: pointer;
+      border: none;
+    }
+
+    .control > .val {
+      flex: 0 0 44px;
+      text-align: right;
+      font-size: 0.82em;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* ── Checkbox ── */
+    .control-check {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 0;
+      font-size: 0.83em;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .control-check input[type="checkbox"] {
+      accent-color: var(--accent);
+      width: 14px;
+      height: 14px;
+      cursor: pointer;
+    }
+
+    /* ── Adjust label ── */
+    .adjust-label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.78em;
+      cursor: pointer;
+      color: var(--text-muted);
+      user-select: none;
+    }
+
+    .adjust-label input { accent-color: var(--accent); }
+
+    /* ── Upload ── */
+    label.drop-area {
+      display: block;
+      border: 2px dashed var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      margin-bottom: 8px;
+    }
+
+    label.drop-area:hover,
+    label.drop-area.highlight {
+      border-color: var(--accent);
+      background: var(--bg-input);
+    }
+
+    #uploadFileName {
+      font-size: 0.83em;
+      color: var(--text-muted);
+    }
+
+    .url-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    .url-row input {
+      flex: 1;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 10px;
+      color: var(--text);
+      font-size: 0.83em;
+    }
+
+    .url-row input:focus {
+      outline: 2px solid var(--accent);
+      outline-offset: -1px;
+    }
+
+    .upload-error {
+      font-size: 0.78em;
+      color: #e03131;
+      min-height: 1.1em;
+      margin-top: 5px;
+    }
+
+    /* ── Buttons ── */
+    .btn {
+      border: none;
+      border-radius: 8px;
+      padding: 8px 18px;
+      font-size: 0.87em;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s;
+    }
+
+    .btn:active { transform: scale(0.97); }
+
+    .btn-primary {
+      background: var(--accent);
+      color: white;
+      width: 100%;
+      max-width: 210px;
+      padding: 9px;
+    }
+    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+
+    .btn-secondary {
+      background: var(--bg-input);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .btn-secondary:hover { background: var(--border); }
+
+    .btn-sm { padding: 5px 12px; font-size: 0.8em; }
+
+    /* ── FPS number input ── */
+    .fps-input {
+      width: 50px;
+      background: var(--bg-input);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 3px 5px;
+      color: var(--text);
+      font-size: 0.82em;
+      text-align: center;
+    }
+
+    /* ── Divider ── */
+    .divider {
+      height: 1px;
+      background: var(--border);
+      margin: 8px 0;
+    }
+
+    /* ── Bottom row ── */
+    .btn-row {
+      display: flex;
+      justify-content: flex-end;
+    }
+
+    /* ── GIF result panel ── */
+    .output-panel {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+
+    /* 2× display, checkerboard shows transparent areas, accent border */
+    #result {
+      width: 224px;
+      height: 224px;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      border: 3px solid var(--accent);
+      border-radius: 6px;
+      box-shadow: 0 0 0 1px var(--border), 0 4px 16px var(--shadow);
+      background-color: #ffffff;
+      background-image:
+        linear-gradient(45deg, #d0d0d0 25%, transparent 25%),
+        linear-gradient(-45deg, #d0d0d0 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #d0d0d0 75%),
+        linear-gradient(-45deg, transparent 75%, #d0d0d0 75%);
+      background-size: 12px 12px;
+      background-position: 0 0, 0 6px, 6px -6px, -6px 0;
+    }
+
+    #download {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 9px 24px;
+      background: var(--accent);
+      color: white;
+      text-decoration: none;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 0.88em;
+      transition: background 0.2s;
+    }
+    #download:hover { background: var(--accent-hover); }
+
+    /* ── Mobile ── */
+    @media (max-width: 760px) {
+      .main-grid {
+        grid-template-columns: 1fr;
+        min-height: auto;
+      }
+
+      .canvas-section {
+        position: static; /* no sticky on mobile — single column */
+      }
+
+      #canvas {
+        width: min(80vw, 320px);
+        height: min(80vw, 320px);
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>✋ PetPet Generator</h1>
+    <button id="themeToggle">☀️ 라이트</button>
+  </header>
+
+  <div class="main-grid">
+
+    <!-- ── Canvas Section (sticky) ── -->
+    <section class="canvas-section">
+      <div class="canvas-wrapper">
+        <canvas id="canvas" width="112" height="112"></canvas>
+        <img id="uploadPreview" style="display:none" alt="">
+      </div>
+
+      <div class="playback">
+        <button class="play-btn" id="prev">⏮</button>
+        <button class="play-btn" id="play">⏸</button>
+        <button class="play-btn" id="next">⏭</button>
+      </div>
+
+      <div class="export-row">
+        <button class="btn btn-primary" id="export">✨ GIF 생성</button>
+        <span id="info"></span>
+      </div>
+    </section>
+
+    <!-- ── Controls Section ── -->
+    <section class="controls-section">
+
+      <!-- Upload -->
+      <div class="panel">
+        <h3>이미지 업로드</h3>
+        <label class="drop-area" id="dropArea">
+          <span id="uploadFileName">🖼 드래그하거나 클릭해서 이미지 업로드</span>
+          <input type="file" id="uploadFile" accept="image/*" style="display:none">
+        </label>
+        <div class="url-row">
+          <input type="text" id="uploadUrl" placeholder="이미지 URL 직접 입력">
+          <button class="btn btn-secondary btn-sm" id="uploadUrlBtn">불러오기</button>
+        </div>
+        <p class="upload-error" id="uploadError"></p>
+      </div>
+
+      <!-- Image controls -->
+      <div class="panel">
+        <div class="panel-header">
+          <h3>이미지 조절</h3>
+          <label class="adjust-label">
+            <input type="checkbox" id="toggleAdjust"> 드래그 모드
+          </label>
+        </div>
+
+        <div class="control">
+          <span class="lbl">크기</span>
+          <input type="range" id="scale" min="20" max="200" value="87">
+          <span class="val" id="scaleVal">87%</span>
+        </div>
+        <div class="control">
+          <span class="lbl">X 위치</span>
+          <input type="range" id="spriteXSlider" min="-112" max="224" value="14">
+          <span class="val" id="spriteXVal">14</span>
+        </div>
+        <div class="control">
+          <span class="lbl">Y 위치</span>
+          <input type="range" id="spriteYSlider" min="-112" max="224" value="20">
+          <span class="val" id="spriteYVal">20</span>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="control">
+          <span class="lbl">눌림</span>
+          <input type="range" id="squish" min="100" max="300" value="125">
+          <span class="val" id="squishVal">125%</span>
+        </div>
+
+        <label class="control-check">
+          <input type="checkbox" id="toggleFlip">
+          좌우 반전
+        </label>
+      </div>
+
+      <!-- Speed -->
+      <div class="panel">
+        <h3>재생 속도</h3>
+        <div class="control">
+          <span class="lbl">FPS</span>
+          <input type="range" id="fps" min="2" max="60" value="16">
+          <input type="number" class="fps-input" id="fpsVal" min="2" max="60" value="16">
+        </div>
+      </div>
+
+      <!-- GIF result (hidden until generated) -->
+      <div class="panel" id="outputSection" style="display:none">
+        <h3>생성된 GIF</h3>
+        <div class="output-panel">
+          <img id="result" alt="생성된 GIF">
+          <a id="download" href="#" download="petpet.gif">💾 다운로드</a>
+        </div>
+      </div>
+
+      <!-- Reset -->
+      <div class="btn-row">
+        <button class="btn btn-secondary" id="reset">↩ 초기화</button>
+      </div>
+
+    </section>
+  </div>
+
+  <script src="requestInterval.js"></script>
+  <script src="gif.js"></script>
+  <script src="main.js"></script>
+</body>
+</html>
