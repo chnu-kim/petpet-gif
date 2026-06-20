@@ -159,6 +159,23 @@ export default function App() {
     return () => { c1(); c2(); };
   }, [handleFile]);
 
+  // ── Clipboard paste ────────────────────────────────────────────────────────
+  const handlePaste = useCallback((e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        handleFile(item.getAsFile());
+        return;
+      }
+    }
+  }, [handleFile]);
+
+  useEffect(() => {
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, [handlePaste]);
+
   // ── File input ─────────────────────────────────────────────────────────────
   const openFilePicker = useCallback(() => fileInputRef.current?.click(), []);
 
@@ -269,7 +286,7 @@ export default function App() {
 
         <div className="big-drop" ref={dropAreaRef} role="button" tabIndex={0} onClick={openFilePicker}>
           <ImageIcon className="drop-icon" size={36} strokeWidth={1.25} />
-          <span className="drop-text">클릭하거나 이미지를 드래그하세요</span>
+          <span className="drop-text">클릭하거나 드래그 / 붙여넣기(Ctrl+V)하세요</span>
           <span className="drop-hint">PNG · JPG · GIF · WebP</span>
         </div>
 
