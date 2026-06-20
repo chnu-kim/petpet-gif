@@ -161,14 +161,9 @@ export default function App() {
 
   // ── Clipboard paste ────────────────────────────────────────────────────────
   const handlePaste = useCallback((e) => {
-    const items = e.clipboardData?.items;
-    if (!items) return;
-    for (const item of items) {
-      if (item.type.startsWith('image/')) {
-        handleFile(item.getAsFile());
-        return;
-      }
-    }
+    const item = Array.from(e.clipboardData?.items ?? [])
+      .find((i) => i.type.startsWith('image/'));
+    if (item) handleFile(item.getAsFile());
   }, [handleFile]);
 
   useEffect(() => {
@@ -349,6 +344,7 @@ export default function App() {
             >
               <ImageIcon size={ICON_MD} />
               <span className="upload-file-name">{fileName}</span>
+              <span className="drop-hint">Ctrl+V</span>
             </div>
             {uploadError && <p className="upload-error">{uploadError}</p>}
           </div>
