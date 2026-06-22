@@ -60,8 +60,27 @@ describe('renameProject', () => {
     expect(after.updatedAt.getTime()).toBeGreaterThanOrEqual(before.updatedAt.getTime());
   });
 
+  it('이름 변경 후 createdAt은 변하지 않는다', async () => {
+    const id = await createProject('old.png');
+    const [before] = await listProjects();
+    await new Promise((r) => setTimeout(r, 5));
+    await renameProject(id, '새 이름');
+    const [after] = await listProjects();
+    expect(after.createdAt.getTime()).toBe(before.createdAt.getTime());
+  });
+
   it('없는 id는 오류 없이 무시된다', async () => {
     await expect(renameProject(9999, '없는 프로젝트')).resolves.toBeUndefined();
+  });
+
+  it('이름 변경 후 listProjects 순서가 바뀌지 않는다', async () => {
+    const id1 = await createProject('first.png');
+    const id2 = await createProject('second.png');
+    await renameProject(id1, '변경된 이름');
+    const projects = await listProjects();
+    expect(projects[0].id).toBe(id2);
+    expect(projects[1].id).toBe(id1);
+    expect(projects[1].name).toBe('변경된 이름');
   });
 });
 
@@ -119,6 +138,20 @@ describe('addGifToProject', () => {
     expect(gifs).toHaveLength(MAX_GIFS_PER_PROJECT);
     // 가장 최신 항목이 맨 앞
     expect(gifs[0].size).toBe(`${MAX_GIFS_PER_PROJECT}KB`);
+  });
+
+  it('MAX+3 추가해도 개수는 MAX를 유지하고 최신 순 정렬된다', async () => {
+    const pid = await createProject('cat.png');
+    const TOTAL = MAX_GIFS_PER_PROJECT + 3;
+    for (let i = 0; i < TOTAL; i++) {
+      await addGifToProject(pid, new Blob([String(i)]), { size: `${i}KB` });
+    }
+    const gifs = await getProjectGifs(pid);
+    expect(gifs).toHaveLength(MAX_GIFS_PER_PROJECT);
+    // 가장 최신 3개(TOTAL-1, TOTAL-2, TOTAL-3)가 앞에 있어야 함
+    expect(gifs[0].size).toBe(`${TOTAL - 1}KB`);
+    expect(gifs[1].size).toBe(`${TOTAL - 2}KB`);
+    expect(gifs[2].size).toBe(`${TOTAL - 3}KB`);
   });
 
   it('eviction은 해당 프로젝트 내에서만 발생한다', async () => {
@@ -208,6 +241,21 @@ describe('removeProject', () => {
     expect(remaining).toHaveLength(1);
     expect(remaining[0].id).toBe(pid2);
     expect(await getProjectGifs(pid2)).toHaveLength(1);
+  });
+
+  it('GIF가 여러 개인 프로젝트 삭제 시 모든 GIF가 삭제된다', async () => {
+    const pid = await createProject('cat.png');
+    for (let i = 0; i < 3; i++) {
+      await addGifToProject(pid, new Blob([String(i)]), {});
+    }
+    await removeProject(pid);
+    expect(await getProjectGifs(pid)).toHaveLength(0);
+  });
+
+  it('GIF 없는 프로젝트 삭제도 오류 없이 완료된다', async () => {
+    const pid = await createProject('empty.png');
+    await removeProject(pid);
+    expect(await listProjects()).toHaveLength(0);
   });
 
   it('없는 id는 오류 없이 무시된다', async () => {
