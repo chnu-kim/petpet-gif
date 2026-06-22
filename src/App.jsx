@@ -7,7 +7,7 @@ import {
   g, DEFAULTS, clamp, truncate,
   createDefaultSprite, ImageLoader, PetPetAnimation, GifRenderer,
 } from './engine.js';
-import { addToHistory, getHistory, removeFromHistory, clearHistory } from './history.js';
+import { addToHistory, getHistory, removeFromHistory, clearHistory, MAX_HISTORY } from './history.js';
 
 const INITIAL_FPS = Math.round(1000 / DEFAULTS.delay);
 const ICON_SM = 14;
@@ -56,9 +56,8 @@ export default function App() {
 
   const loadHistory = useCallback(async () => {
     const items = await getHistory();
-    // 기존 URL 해제 후 새로 생성
     historyUrlsRef.current.forEach((u) => URL.revokeObjectURL(u));
-    historyUrlsRef.current = new Map();
+    historyUrlsRef.current.clear(); // Fix D: new Map() → .clear()
     const withUrls = items.map((item) => {
       const url = URL.createObjectURL(item.blob);
       historyUrlsRef.current.set(item.id, url);
@@ -81,7 +80,7 @@ export default function App() {
 
   const handleClearHistory = useCallback(async () => {
     historyUrlsRef.current.forEach((u) => URL.revokeObjectURL(u));
-    historyUrlsRef.current = new Map();
+    historyUrlsRef.current.clear(); // Fix D: new Map() → .clear()
     await clearHistory();
     setHistoryItems([]);
   }, []);
@@ -141,7 +140,21 @@ export default function App() {
         setGifUrl((prev) => { URL.revokeObjectURL(prev); return URL.createObjectURL(blob); });
         setGifMeta(label);
         setOverlayOpen(true);
-        addToHistory(blob, { size: `${size}KB`, duration: `${sec}초` }).then(loadHistory);
+        // Fix E: DB 저장 완료 후 반환된 id로 낙관적 prepend — 전체 재로드 없음
+        addToHistory(blob, { size: `${size}KB`, duration: `${sec}초` }).then((id) => {
+          const histUrl = URL.createObjectURL(blob);
+          historyUrlsRef.current.set(id, histUrl);
+          setHistoryItems((prev) => {
+            const next = [{ id, url: histUrl, size: `${size}KB`, duration: `${sec}초`, createdAt: new Date() }, ...prev];
+            if (next.length > MAX_HISTORY) {
+              next.splice(MAX_HISTORY).forEach((item) => {
+                URL.revokeObjectURL(historyUrlsRef.current.get(item.id));
+                historyUrlsRef.current.delete(item.id);
+              });
+            }
+            return next;
+          });
+        });
       }
     );
 
