@@ -358,14 +358,10 @@ export default function App() {
   // ── 새 프로젝트 생성 (이미지 없이) ────────────────────────────────────────
   const handleNewProject = useCallback(async () => {
     const prevPid = currentProjectIdRef.current;
-    if (prevPid !== null) {
-      const snap = captureSettings();
-      await updateProjectSnapshot(prevPid, currentImageBlobRef.current, snap);
-      setProjects((prev) => prev.map((p) =>
-        p.id === prevPid ? { ...p, settings: snap, updatedAt: new Date() } : p,
-      ));
-    }
+    const prevBlob = currentImageBlobRef.current;
+    const snap = prevPid !== null ? captureSettings() : null;
 
+    // Reset all state synchronously
     Object.assign(g, DEFAULTS);
     setScaleVal(~~(DEFAULTS.scale * 100));
     setSquishVal(~~(DEFAULTS.squish * 100));
@@ -374,19 +370,32 @@ export default function App() {
     setFps(INITIAL_FPS);
     setFlip(DEFAULTS.flip);
     setAdjustMode(false);
+    currentProjectIdRef.current = null;
+    currentImageBlobRef.current = null;
+    setActiveProjectId(null);
+    setFileName('이미지 없음');
+    loaderRef.current?.loadImage(createDefaultSprite());
+
+    // Save previous in background
+    if (prevPid !== null && snap !== null) {
+      updateProjectSnapshot(prevPid, prevBlob, snap).then(() => {
+        setProjects((prev) => prev.map((p) =>
+          p.id === prevPid ? { ...p, settings: snap, updatedAt: new Date() } : p,
+        ));
+      });
+    }
 
     const name = '새 프로젝트';
-    const settings = captureSettings();
+    const settings = { ...DEFAULTS };
     const id = await createProject(name, null, settings);
-    currentProjectIdRef.current = id;
-    currentImageBlobRef.current = null;
-    setActiveProjectId(id);
-    setFileName('이미지 없음');
 
-    const now = new Date();
-    setProjects((prev) => [{ id, name, imageBlob: null, settings, createdAt: now, updatedAt: now }, ...prev]);
-
-    loaderRef.current?.loadImage(createDefaultSprite());
+    // Only apply if the user hasn't navigated away during the DB write
+    if (currentProjectIdRef.current === null) {
+      currentProjectIdRef.current = id;
+      setActiveProjectId(id);
+      const now = new Date();
+      setProjects((prev) => [{ id, name, imageBlob: null, settings, createdAt: now, updatedAt: now }, ...prev]);
+    }
   }, []);
 
   // ── 프로젝트 전환 (이미지 + 설정 복원) ─────────────────────────────────────
@@ -394,27 +403,29 @@ export default function App() {
     if (project.id === currentProjectIdRef.current) return;
 
     const prevPid = currentProjectIdRef.current;
-    if (prevPid !== null) {
-      const snap = captureSettings();
-      await updateProjectSnapshot(prevPid, currentImageBlobRef.current, snap);
-      setProjects((prev) => prev.map((p) =>
-        p.id === prevPid ? { ...p, settings: snap, updatedAt: new Date() } : p,
-      ));
-    }
+    const prevBlob = currentImageBlobRef.current;
+    const snap = prevPid !== null ? captureSettings() : null;
 
+    // Synchronous updates first — prevents concurrent switch calls from seeing stale refs
     currentProjectIdRef.current = project.id;
+    currentImageBlobRef.current = project.imageBlob ?? null;
     setActiveProjectId(project.id);
     setFileName(project.imageBlob ? truncate(project.name, 26) : '이미지 없음');
-
     applySettings(project.settings ?? DEFAULTS);
 
     if (project.imageBlob) {
       const url = URL.createObjectURL(project.imageBlob);
-      currentImageBlobRef.current = project.imageBlob;
       loaderRef.current?.loadImage(url);
     } else {
-      currentImageBlobRef.current = null;
       loaderRef.current?.loadImage(createDefaultSprite());
+    }
+
+    // Save previous project snapshot in the background (non-blocking)
+    if (prevPid !== null && snap !== null) {
+      await updateProjectSnapshot(prevPid, prevBlob, snap);
+      setProjects((prev) => prev.map((p) =>
+        p.id === prevPid ? { ...p, settings: snap, updatedAt: new Date() } : p,
+      ));
     }
   }, [applySettings]);
 

@@ -134,10 +134,16 @@ export const ImageLoader = (onLoad, onError) => {
   cache.width = cache.height = CACHE_SIZE;
 
   let dataURLCache = '';
+  let toRevoke = '';
   const img = new Image();
   img.crossOrigin = 'Anonymous';
 
+  const flushRevoke = () => {
+    if (toRevoke) { URL.revokeObjectURL(toRevoke); toRevoke = ''; }
+  };
+
   img.onload = () => {
+    flushRevoke();
     cache.height = CACHE_SIZE * (img.naturalHeight / img.naturalWidth);
     cacheCtx.clearRect(0, 0, cache.width, cache.height);
     cacheCtx.drawImage(img, 0, 0, cache.width, cache.height);
@@ -145,11 +151,17 @@ export const ImageLoader = (onLoad, onError) => {
     onLoad(dataURLCache);
   };
 
-  img.addEventListener('error', (e) => onError(e, dataURLCache));
+  img.addEventListener('error', (e) => {
+    flushRevoke();
+    onError(e, dataURLCache);
+  });
 
   return {
     loadImage(src) {
-      URL.revokeObjectURL(img.src);
+      // revoke the superseded URL immediately (its load was already cancelled);
+      // keep the current img.src pending revocation until the new one loads
+      if (toRevoke) URL.revokeObjectURL(toRevoke);
+      toRevoke = img.src;
       img.src = src;
     },
   };
