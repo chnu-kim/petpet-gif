@@ -1,8 +1,9 @@
-export const MAX_HISTORY = 20;
+export const MAX_GIFS_PER_PROJECT = 20;
 
-const DB_NAME = 'petpet-history';
-const DB_VER  = 1;
-const STORE   = 'gifs';
+const DB_NAME  = 'petpet-history';
+const DB_VER   = 2;
+const PROJECTS = 'projects';
+const GIFS     = 'gifs';
 
 let dbPromise = null;
 
@@ -18,13 +19,21 @@ function openDB() {
   return dbPromise;
 }
 
-// Fix B: wrap 재사용 — onupgradeneeded 설정 후 wrap(req) 위임
 function _createDB() {
   const req = indexedDB.open(DB_NAME, DB_VER);
   req.onupgradeneeded = (e) => {
     const db = e.target.result;
-    if (!db.objectStoreNames.contains(STORE)) {
-      db.createObjectStore(STORE, { keyPath: 'id', autoIncrement: true });
+    if (!db.objectStoreNames.contains(PROJECTS)) {
+      db.createObjectStore(PROJECTS, { keyPath: 'id', autoIncrement: true });
+    }
+    if (!db.objectStoreNames.contains(GIFS)) {
+      const gifStore = db.createObjectStore(GIFS, { keyPath: 'id', autoIncrement: true });
+      gifStore.createIndex('projectId', 'projectId', { unique: false });
+    } else if (!e.target.transaction.objectStore(GIFS).indexNames.contains('projectId')) {
+      e.target.transaction.objectStore(GIFS).createIndex('projectId', 'projectId', { unique: false });
+    }
+    if (e.oldVersion === 1) {
+      e.target.transaction.objectStore(GIFS).clear();
     }
   };
   return wrap(req);
@@ -44,46 +53,106 @@ export async function _resetDB() {
   });
 }
 
-function tx(db, mode) {
-  return db.transaction(STORE, mode).objectStore(STORE);
+function txStores(db, storeNames, mode) {
+  const t = db.transaction(storeNames, mode);
+  return storeNames.map((n) => t.objectStore(n));
 }
 
-// Fix A: 3개 트랜잭션 → cursor 기반 단일 readwrite 트랜잭션, 새 id 반환
-export function addToHistory(blob, meta) {
+// ── Projects ────────────────────────────────────────────────────
+
+export async function createProject(name) {
+  const db  = await openDB();
+  const now = new Date();
+  return wrap(
+    db.transaction(PROJECTS, 'readwrite').objectStore(PROJECTS).add({
+      name,
+      createdAt: now,
+      updatedAt: now,
+    }),
+  );
+}
+
+export async function renameProject(id, name) {
+  const db    = await openDB();
+  const store = db.transaction(PROJECTS, 'readwrite').objectStore(PROJECTS);
+  const project = await wrap(store.get(id));
+  if (!project) return;
+  await wrap(store.put({ ...project, name, updatedAt: new Date() }));
+}
+
+export async function listProjects() {
+  const db  = await openDB();
+  const all = await wrap(
+    db.transaction(PROJECTS, 'readonly').objectStore(PROJECTS).getAll(),
+  );
+  return all.reverse();
+}
+
+export async function removeProject(id) {
+  const db = await openDB();
+  const [projStore, gifStore] = txStores(db, [PROJECTS, GIFS], 'readwrite');
+  projStore.delete(id);
+  await new Promise((resolve, reject) => {
+    const req = gifStore.index('projectId').openCursor(IDBKeyRange.only(id));
+    req.onsuccess = (e) => {
+      const c = e.target.result;
+      if (c) { c.delete(); c.continue(); }
+      else resolve();
+    };
+    req.onerror = (e) => reject(e.target.error);
+  });
+}
+
+// ── GIFs ────────────────────────────────────────────────────────
+
+export function addGifToProject(projectId, blob, meta) {
   return openDB().then((db) => new Promise((resolve, reject) => {
-    const store = db.transaction(STORE, 'readwrite').objectStore(STORE);
-    let newId;
-    const addReq = store.add({ blob, ...meta, createdAt: new Date() });
-    addReq.onsuccess = (e) => { newId = e.target.result; };
-    const countReq = store.count();
+    const [projStore, gifStore] = txStores(db, [PROJECTS, GIFS], 'readwrite');
+    const now = new Date();
+    let newGifId;
+
+    const addReq = gifStore.add({ projectId, blob, ...meta, createdAt: now });
+    addReq.onsuccess = (e) => { newGifId = e.target.result; };
+
+    const getReq = projStore.get(projectId);
+    getReq.onsuccess = () => {
+      const project = getReq.result;
+      if (project) projStore.put({ ...project, updatedAt: now });
+    };
+
+    const countReq = gifStore.index('projectId').count(IDBKeyRange.only(projectId));
     countReq.onsuccess = () => {
-      if (countReq.result > MAX_HISTORY) {
-        let excess = countReq.result - MAX_HISTORY;
-        const cursorReq = store.openCursor();
+      let excess = countReq.result - MAX_GIFS_PER_PROJECT;
+      if (excess > 0) {
+        const cursorReq = gifStore.index('projectId').openCursor(IDBKeyRange.only(projectId));
         cursorReq.onsuccess = (e) => {
           const c = e.target.result;
           if (c && excess-- > 0) { c.delete(); c.continue(); }
         };
       }
     };
-    store.transaction.oncomplete = () => resolve(newId);
-    store.transaction.onerror   = () => reject(store.transaction.error);
+
+    const t = gifStore.transaction;
+    t.oncomplete = () => resolve(newGifId);
+    t.onerror    = () => reject(t.error);
   }));
 }
 
-// Fix C: getAll(null, MAX_HISTORY) — DB 레이어에서 수량 제한
-export async function getHistory() {
+export async function getProjectGifs(projectId) {
   const db  = await openDB();
-  const all = await wrap(tx(db, 'readonly').getAll(null, MAX_HISTORY));
+  const idx = db.transaction(GIFS, 'readonly').objectStore(GIFS).index('projectId');
+  const all = await wrap(idx.getAll(IDBKeyRange.only(projectId)));
   return all.reverse();
 }
 
-export async function removeFromHistory(id) {
+export async function removeGif(id) {
   const db = await openDB();
-  await wrap(tx(db, 'readwrite').delete(id));
+  await wrap(db.transaction(GIFS, 'readwrite').objectStore(GIFS).delete(id));
 }
 
-export async function clearHistory() {
+export async function clearAllProjects() {
   const db = await openDB();
-  await wrap(tx(db, 'readwrite').clear());
+  const [projStore, gifStore] = txStores(db, [PROJECTS, GIFS], 'readwrite');
+  projStore.clear();
+  gifStore.clear();
 }

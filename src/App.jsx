@@ -1,17 +1,35 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   Hand, Sun, Moon, Image as ImageIcon, SkipBack, Play, Pause, SkipForward,
-  FlipHorizontal2, Move, RotateCcw, Download, Trash2,
+  FlipHorizontal2, Move, RotateCcw, Download, Trash2, Pencil, Check, X as XIcon, ChevronRight,
 } from 'lucide-react';
 import {
   g, DEFAULTS, clamp, truncate,
   createDefaultSprite, ImageLoader, PetPetAnimation, GifRenderer,
 } from './engine.js';
-import { addToHistory, getHistory, removeFromHistory, clearHistory, MAX_HISTORY } from './history.js';
+import {
+  createProject,
+  renameProject,
+  addGifToProject,
+  listProjects,
+  getProjectGifs,
+  removeProject,
+  removeGif,
+  clearAllProjects,
+  MAX_GIFS_PER_PROJECT,
+} from './history.js';
 
 const INITIAL_FPS = Math.round(1000 / DEFAULTS.delay);
 const ICON_SM = 14;
 const ICON_MD = 16;
+
+function fmtDate(d) {
+  if (!d) return '';
+  return new Date(d).toLocaleString('ko-KR', {
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit',
+  });
+}
 
 export default function App() {
   // ── Theme ──────────────────────────────────────────────────────────────────
@@ -25,7 +43,7 @@ export default function App() {
     localStorage.setItem('petpet-theme', theme);
   }, [theme]);
 
-  // ── View (CSS display 토글 — canvas를 항상 DOM에 유지) ──────────────────────
+  // ── View ───────────────────────────────────────────────────────────────────
   const [view, setView] = useState('empty');
 
   // ── Display state ──────────────────────────────────────────────────────────
@@ -50,40 +68,92 @@ export default function App() {
   const [gifUrl, setGifUrl]           = useState('');
   const [gifMeta, setGifMeta]         = useState('');
 
-  // ── History ────────────────────────────────────────────────────────────────
-  const [historyItems, setHistoryItems] = useState([]);
-  const historyUrlsRef = useRef(new Map()); // id → object URL
+  // ── History (Project-based) ────────────────────────────────────────────────
+  const [projects, setProjects] = useState([]);
+  const [expandedId, setExpandedId] = useState(null);
+  const [projectGifsMap, setProjectGifsMap] = useState({});
+  const [editingProjectId, setEditingProjectId] = useState(null);
+  const [editingName, setEditingName] = useState('');
 
-  const loadHistory = useCallback(async () => {
-    const items = await getHistory();
-    historyUrlsRef.current.forEach((u) => URL.revokeObjectURL(u));
-    historyUrlsRef.current.clear(); // Fix D: new Map() → .clear()
-    const withUrls = items.map((item) => {
-      const url = URL.createObjectURL(item.blob);
-      historyUrlsRef.current.set(item.id, url);
-      return { id: item.id, url, size: item.size, duration: item.duration, createdAt: item.createdAt };
-    });
-    setHistoryItems(withUrls);
-  }, []);
+  const currentProjectIdRef = useRef(null);
+  const gifUrlsRef = useRef(new Map());
 
   useEffect(() => {
-    loadHistory();
-    return () => { historyUrlsRef.current.forEach((u) => URL.revokeObjectURL(u)); };
-  }, [loadHistory]);
-
-  const handleRemoveHistory = useCallback(async (id) => {
-    URL.revokeObjectURL(historyUrlsRef.current.get(id));
-    historyUrlsRef.current.delete(id);
-    await removeFromHistory(id);
-    setHistoryItems((prev) => prev.filter((item) => item.id !== id));
+    listProjects().then(setProjects);
+    return () => { gifUrlsRef.current.forEach((u) => URL.revokeObjectURL(u)); };
   }, []);
 
-  const handleClearHistory = useCallback(async () => {
-    historyUrlsRef.current.forEach((u) => URL.revokeObjectURL(u));
-    historyUrlsRef.current.clear(); // Fix D: new Map() → .clear()
-    await clearHistory();
-    setHistoryItems([]);
+  const handleExpandProject = useCallback(async (pid) => {
+    if (expandedId === pid) { setExpandedId(null); return; }
+    setExpandedId(pid);
+    if (!projectGifsMap[pid]) {
+      const gifs = await getProjectGifs(pid);
+      const withUrls = gifs.map((gif) => {
+        if (!gifUrlsRef.current.has(gif.id)) {
+          gifUrlsRef.current.set(gif.id, URL.createObjectURL(gif.blob));
+        }
+        return {
+          id: gif.id,
+          url: gifUrlsRef.current.get(gif.id),
+          size: gif.size,
+          duration: gif.duration,
+          createdAt: gif.createdAt,
+        };
+      });
+      setProjectGifsMap((prev) => ({ ...prev, [pid]: withUrls }));
+    }
+  }, [expandedId, projectGifsMap]);
+
+  const handleRemoveProject = useCallback(async (e, pid) => {
+    e.stopPropagation();
+    (projectGifsMap[pid] || []).forEach((gif) => {
+      URL.revokeObjectURL(gifUrlsRef.current.get(gif.id));
+      gifUrlsRef.current.delete(gif.id);
+    });
+    await removeProject(pid);
+    setProjects((prev) => prev.filter((p) => p.id !== pid));
+    setProjectGifsMap((prev) => { const next = { ...prev }; delete next[pid]; return next; });
+    if (expandedId === pid) setExpandedId(null);
+  }, [expandedId, projectGifsMap]);
+
+  const handleRemoveGif = useCallback(async (e, gifId, pid) => {
+    e.stopPropagation();
+    URL.revokeObjectURL(gifUrlsRef.current.get(gifId));
+    gifUrlsRef.current.delete(gifId);
+    await removeGif(gifId);
+    setProjectGifsMap((prev) => ({
+      ...prev,
+      [pid]: (prev[pid] || []).filter((gif) => gif.id !== gifId),
+    }));
   }, []);
+
+  const handleClearAll = useCallback(async () => {
+    gifUrlsRef.current.forEach((u) => URL.revokeObjectURL(u));
+    gifUrlsRef.current.clear();
+    await clearAllProjects();
+    setProjects([]);
+    setProjectGifsMap({});
+    setExpandedId(null);
+  }, []);
+
+  const handleStartRename = useCallback((e, project) => {
+    e.stopPropagation();
+    setEditingProjectId(project.id);
+    setEditingName(project.name);
+  }, []);
+
+  const handleFinishRename = useCallback(async (id) => {
+    const name = editingName.trim();
+    if (name) {
+      await renameProject(id, name);
+      setProjects((prev) =>
+        prev.map((p) => p.id === id ? { ...p, name, updatedAt: new Date() } : p),
+      );
+    }
+    setEditingProjectId(null);
+  }, [editingName]);
+
+  const handleCancelRename = useCallback(() => setEditingProjectId(null), []);
 
   // ── DOM refs ───────────────────────────────────────────────────────────────
   const canvasRef      = useRef(null);
@@ -104,7 +174,7 @@ export default function App() {
     const preview = previewRef.current;
     if (!canvas || !preview) return;
 
-    let cancelled = false; // StrictMode double-mount guard
+    let cancelled = false;
     let gifStart = 0;
 
     const hand = new Image();
@@ -140,22 +210,24 @@ export default function App() {
         setGifUrl((prev) => { URL.revokeObjectURL(prev); return URL.createObjectURL(blob); });
         setGifMeta(label);
         setOverlayOpen(true);
-        // Fix E: DB 저장 완료 후 반환된 id로 낙관적 prepend — 전체 재로드 없음
-        addToHistory(blob, { size: `${size}KB`, duration: `${sec}초` }).then((id) => {
-          const histUrl = URL.createObjectURL(blob);
-          historyUrlsRef.current.set(id, histUrl);
-          setHistoryItems((prev) => {
-            const next = [{ id, url: histUrl, size: `${size}KB`, duration: `${sec}초`, createdAt: new Date() }, ...prev];
-            if (next.length > MAX_HISTORY) {
-              next.splice(MAX_HISTORY).forEach((item) => {
-                URL.revokeObjectURL(historyUrlsRef.current.get(item.id));
-                historyUrlsRef.current.delete(item.id);
-              });
-            }
-            return next;
+
+        const pid = currentProjectIdRef.current;
+        if (pid === null) return;
+
+        addGifToProject(pid, blob, { size: `${size}KB`, duration: `${sec}초` }).then((gifId) => {
+          const url = URL.createObjectURL(blob);
+          gifUrlsRef.current.set(gifId, url);
+          const now = new Date();
+          setProjects((prev) =>
+            prev.map((p) => p.id === pid ? { ...p, updatedAt: now } : p),
+          );
+          setProjectGifsMap((prev) => {
+            if (prev[pid] === undefined) return prev;
+            const newGif = { id: gifId, url, size: `${size}KB`, duration: `${sec}초`, createdAt: now };
+            return { ...prev, [pid]: [newGif, ...prev[pid]].slice(0, MAX_GIFS_PER_PROJECT) };
           });
         });
-      }
+      },
     );
 
     loaderRef.current = ImageLoader(
@@ -170,7 +242,7 @@ export default function App() {
       () => {
         if (cancelled) return;
         setUploadError('이미지를 불러올 수 없습니다.');
-      }
+      },
     );
 
     hand.src = `${import.meta.env.BASE_URL}img/sprite.png`;
@@ -179,13 +251,22 @@ export default function App() {
     return () => { cancelled = true; animation.destroy(); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Image loading ──────────────────────────────────────────────────────────
+  const startNewProject = useCallback(async (name, imageSource) => {
+    setUploadError('');
+    setFileName(truncate(name, 26));
+    const id = await createProject(name);
+    currentProjectIdRef.current = id;
+    const now = new Date();
+    setProjects((prev) => [{ id, name, createdAt: now, updatedAt: now }, ...prev]);
+    loaderRef.current?.loadImage(imageSource);
+  }, []);
+
   // ── Drop zone wiring ───────────────────────────────────────────────────────
   const handleFile = useCallback((file) => {
     if (!file?.type.startsWith('image/')) return;
-    setUploadError('');
-    setFileName(truncate(file.name, 26));
-    loaderRef.current?.loadImage(URL.createObjectURL(file));
-  }, []);
+    startNewProject(file.name || '이름 없는 이미지', URL.createObjectURL(file));
+  }, [startNewProject]);
 
   useEffect(() => {
     const wire = (el) => {
@@ -214,8 +295,8 @@ export default function App() {
   const handlePaste = useCallback((e) => {
     const item = Array.from(e.clipboardData?.items ?? [])
       .find((i) => i.type.startsWith('image/'));
-    if (item) handleFile(item.getAsFile());
-  }, [handleFile]);
+    if (item) startNewProject('붙여넣은 이미지', URL.createObjectURL(item.getAsFile()));
+  }, [startNewProject]);
 
   useEffect(() => {
     window.addEventListener('paste', handlePaste);
@@ -228,9 +309,14 @@ export default function App() {
   const loadFromUrl = useCallback(() => {
     const url = urlInputRef.current?.value.trim();
     if (!url) return;
-    setUploadError('');
-    loaderRef.current?.loadImage(url);
-  }, []);
+    let name = '이름 없는 이미지';
+    try {
+      const pathname = new URL(url).pathname;
+      const basename = pathname.split('/').pop();
+      if (basename) name = decodeURIComponent(basename);
+    } catch (_) {}
+    startNewProject(name, url);
+  }, [startNewProject]);
 
   // ── Playback ───────────────────────────────────────────────────────────────
   const togglePlay = useCallback(() => {
@@ -313,10 +399,7 @@ export default function App() {
         </button>
       </header>
 
-      {/* preview img: 항상 DOM에 존재 (engine sprite 참조) */}
       <img ref={previewRef} style={{ display: 'none' }} alt="" />
-
-      {/* 공유 파일 input */}
       <input
         ref={fileInputRef}
         type="file"
@@ -351,14 +434,13 @@ export default function App() {
         {uploadError && <p className="upload-error">{uploadError}</p>}
       </div>
 
-      {/* ── 에디터 (canvas를 항상 DOM에 유지하기 위해 display 토글) ── */}
+      {/* ── 에디터 ── */}
       <div className="editor" style={{ display: view === 'editor' ? 'grid' : 'none' }}>
 
         {/* 캔버스 컬럼 */}
         <div className="canvas-col">
           <div className="canvas-card">
             <div className="canvas-frame">
-              {/* canvasRef 단일 canvas: 항상 DOM에 존재 */}
               <canvas
                 ref={canvasRef}
                 width="112"
@@ -367,15 +449,15 @@ export default function App() {
               />
             </div>
             <div className="playback">
-              <button className="play-btn" title="이전 프레임" onClick={() => seek(-1)}><SkipBack size={ICON_MD} /></button>
-              <button
-                className="play-btn play-btn-main"
-                title="재생/정지"
-                onClick={togglePlay}
-              >
+              <button className="play-btn" title="이전 프레임" onClick={() => seek(-1)}>
+                <SkipBack size={ICON_MD} />
+              </button>
+              <button className="play-btn play-btn-main" title="재생/정지" onClick={togglePlay}>
                 {playing ? <Pause size={ICON_MD} /> : <Play size={ICON_MD} />}
               </button>
-              <button className="play-btn" title="다음 프레임" onClick={() => seek(1)}><SkipForward size={ICON_MD} /></button>
+              <button className="play-btn" title="다음 프레임" onClick={() => seek(1)}>
+                <SkipForward size={ICON_MD} />
+              </button>
             </div>
           </div>
         </div>
@@ -435,18 +517,10 @@ export default function App() {
             <div className="divider" />
 
             <div className="toggle-row">
-              <button
-                className="toggle-btn"
-                aria-pressed={String(flip)}
-                onClick={handleFlip}
-              >
+              <button className="toggle-btn" aria-pressed={String(flip)} onClick={handleFlip}>
                 <FlipHorizontal2 size={ICON_SM} /> 좌우 반전
               </button>
-              <button
-                className="toggle-btn"
-                aria-pressed={String(adjustMode)}
-                onClick={handleAdjust}
-              >
+              <button className="toggle-btn" aria-pressed={String(adjustMode)} onClick={handleAdjust}>
                 <Move size={ICON_SM} /> 드래그 모드
               </button>
             </div>
@@ -457,21 +531,10 @@ export default function App() {
             <p className="card-label">재생 속도</p>
             <div className="control">
               <span className="ctrl-lbl">FPS</span>
-              <input
-                type="range"
-                min="2"
-                max="60"
-                value={fps}
-                onChange={(e) => handleFpsChange(e.target.value)}
-              />
-              <input
-                type="number"
-                className="fps-number"
-                min="2"
-                max="60"
-                value={fps}
-                onChange={(e) => handleFpsChange(e.target.value)}
-              />
+              <input type="range" min="2" max="60" value={fps}
+                onChange={(e) => handleFpsChange(e.target.value)} />
+              <input type="number" className="fps-number" min="2" max="60" value={fps}
+                onChange={(e) => handleFpsChange(e.target.value)} />
             </div>
           </div>
 
@@ -487,41 +550,129 @@ export default function App() {
             {exportInfo && <p className="export-info">{exportInfo}</p>}
           </div>
 
-          {/* 히스토리 */}
+          {/* 프로젝트 히스토리 */}
           <div className="card">
             <div className="card-label-row">
-              <p className="card-label">히스토리</p>
-              {historyItems.length > 0 && (
-                <button className="btn-xs" onClick={handleClearHistory}>전체 삭제</button>
+              <p className="card-label">프로젝트</p>
+              {projects.length > 0 && (
+                <button className="btn-xs" onClick={handleClearAll}>전체 삭제</button>
               )}
             </div>
-            {historyItems.length === 0 ? (
-              <p className="history-empty">생성된 GIF가 없습니다</p>
+            {projects.length === 0 ? (
+              <p className="history-empty">저장된 프로젝트가 없습니다</p>
             ) : (
-              <div className="history-grid">
-                {historyItems.map((item) => (
-                  <div className="history-item" key={item.id}>
-                    <img src={item.url} alt="history gif" />
-                    <div className="history-item-overlay">
-                      <a
-                        className="history-item-btn dl"
-                        href={item.url}
-                        download={`petpet-${item.id}.gif`}
-                        title="다운로드"
+              <div className="project-list">
+                {projects.map((project) => {
+                  const isExpanded = expandedId === project.id;
+                  const isEditing  = editingProjectId === project.id;
+                  const gifs       = projectGifsMap[project.id];
+
+                  return (
+                    <div key={project.id} className={`project-item${isExpanded ? ' expanded' : ''}`}>
+                      <div
+                        className="project-header"
+                        onClick={() => !isEditing && handleExpandProject(project.id)}
                       >
-                        <Download size={12} />
-                      </a>
-                      <button
-                        className="history-item-btn del"
-                        title="삭제"
-                        onClick={() => handleRemoveHistory(item.id)}
-                      >
-                        <Trash2 size={12} />
-                      </button>
-                      <span className="history-meta">{item.size}</span>
+                        <ChevronRight size={12} className="project-chevron" />
+
+                        <div className="project-name-wrap">
+                          {isEditing ? (
+                            <>
+                              <input
+                                className="project-name-input"
+                                value={editingName}
+                                autoFocus
+                                onChange={(e) => setEditingName(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') handleFinishRename(project.id);
+                                  if (e.key === 'Escape') handleCancelRename();
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                              />
+                              <button
+                                className="project-rename-action-btn confirm"
+                                title="확인"
+                                onClick={(e) => { e.stopPropagation(); handleFinishRename(project.id); }}
+                              >
+                                <Check size={11} />
+                              </button>
+                              <button
+                                className="project-rename-action-btn cancel"
+                                title="취소"
+                                onClick={(e) => { e.stopPropagation(); handleCancelRename(); }}
+                              >
+                                <XIcon size={11} />
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <span className="project-name" title={project.name}>{project.name}</span>
+                              <button
+                                className="project-rename-btn"
+                                title="이름 수정"
+                                onClick={(e) => handleStartRename(e, project)}
+                              >
+                                <Pencil size={10} />
+                              </button>
+                            </>
+                          )}
+                        </div>
+
+                        <div className="project-dates">
+                          <div>생성 {fmtDate(project.createdAt)}</div>
+                          <div>수정 {fmtDate(project.updatedAt)}</div>
+                        </div>
+
+                        {!isEditing && (
+                          <button
+                            className="project-del-btn"
+                            title="프로젝트 삭제"
+                            onClick={(e) => handleRemoveProject(e, project.id)}
+                          >
+                            <Trash2 size={11} />
+                          </button>
+                        )}
+                      </div>
+
+                      {isExpanded && (
+                        <div className="project-gifs">
+                          {!gifs ? (
+                            <p className="history-empty">불러오는 중…</p>
+                          ) : gifs.length === 0 ? (
+                            <p className="history-empty">GIF가 없습니다</p>
+                          ) : (
+                            <div className="history-grid">
+                              {gifs.map((gif) => (
+                                <div className="history-item" key={gif.id}>
+                                  <img src={gif.url} alt="gif" />
+                                  <div className="history-item-overlay">
+                                    <a
+                                      className="history-item-btn dl"
+                                      href={gif.url}
+                                      download={`petpet-${gif.id}.gif`}
+                                      title="다운로드"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      <Download size={12} />
+                                    </a>
+                                    <button
+                                      className="history-item-btn del"
+                                      title="삭제"
+                                      onClick={(e) => handleRemoveGif(e, gif.id, project.id)}
+                                    >
+                                      <Trash2 size={12} />
+                                    </button>
+                                    <span className="history-meta">{gif.size}</span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -542,7 +693,9 @@ export default function App() {
           {gifUrl && <img className="result-img" src={gifUrl} alt="생성된 GIF" />}
           <div className="overlay-actions">
             <button className="btn btn-ghost" onClick={closeOverlay}>닫기</button>
-            <a className="download-link" href={gifUrl} download="petpet.gif"><Download size={ICON_SM} /> 다운로드</a>
+            <a className="download-link" href={gifUrl} download="petpet.gif">
+              <Download size={ICON_SM} /> 다운로드
+            </a>
           </div>
         </div>
       </div>
