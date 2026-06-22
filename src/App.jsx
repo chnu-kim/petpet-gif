@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   Hand, Sun, Moon, Image as ImageIcon, SkipBack, Play, Pause, SkipForward,
   FlipHorizontal2, Move, RotateCcw, Download, Trash2, Pencil, Check, X as XIcon,
-  ChevronRight, PanelLeftClose, PanelLeftOpen,
+  ChevronRight, PanelLeftClose, PanelLeftOpen, Plus,
 } from 'lucide-react';
 import {
   g, DEFAULTS, clamp, truncate,
@@ -103,17 +103,32 @@ export default function App() {
   const [gifUrl, setGifUrl]           = useState('');
   const [gifMeta, setGifMeta]         = useState('');
 
-  // ── History (Project-based) ────────────────────────────────────────────────
-  const [projects, setProjects]             = useState([]);
-  const [activeProjectId, setActiveProjectId] = useState(null);
-  const [expandedId, setExpandedId]         = useState(null);
-  const [projectGifsMap, setProjectGifsMap] = useState({});
-  const [editingProjectId, setEditingProjectId] = useState(null);
-  const [editingName, setEditingName]       = useState('');
+  // ── Confirm modal ──────────────────────────────────────────────────────────
+  const [confirmModal, setConfirmModal] = useState(null);
 
-  const currentProjectIdRef    = useRef(null);
-  const currentImageBlobRef    = useRef(null);
-  const gifUrlsRef             = useRef(new Map());
+  const askConfirm = useCallback((message, onConfirm) => {
+    setConfirmModal({ message, onConfirm });
+  }, []);
+
+  const closeConfirm = useCallback(() => setConfirmModal(null), []);
+
+  const handleConfirm = useCallback(() => {
+    const fn = confirmModal?.onConfirm;
+    closeConfirm();
+    fn?.();
+  }, [confirmModal, closeConfirm]);
+
+  // ── History (Project-based) ────────────────────────────────────────────────
+  const [projects, setProjects]               = useState([]);
+  const [activeProjectId, setActiveProjectId] = useState(null);
+  const [expandedId, setExpandedId]           = useState(null);
+  const [projectGifsMap, setProjectGifsMap]   = useState({});
+  const [editingProjectId, setEditingProjectId] = useState(null);
+  const [editingName, setEditingName]         = useState('');
+
+  const currentProjectIdRef = useRef(null);
+  const currentImageBlobRef = useRef(null);
+  const gifUrlsRef          = useRef(new Map());
 
   useEffect(() => {
     listProjects().then(setProjects);
@@ -135,45 +150,51 @@ export default function App() {
     }
   }, [expandedId, projectGifsMap]);
 
-  const handleRemoveProject = useCallback(async (e, pid) => {
+  const handleRemoveProject = useCallback((e, pid) => {
     e.stopPropagation();
-    (projectGifsMap[pid] || []).forEach((gif) => {
-      URL.revokeObjectURL(gifUrlsRef.current.get(gif.id));
-      gifUrlsRef.current.delete(gif.id);
+    askConfirm('이 프로젝트를 삭제하시겠습니까?\n포함된 GIF도 모두 삭제됩니다.', async () => {
+      (projectGifsMap[pid] || []).forEach((gif) => {
+        URL.revokeObjectURL(gifUrlsRef.current.get(gif.id));
+        gifUrlsRef.current.delete(gif.id);
+      });
+      await removeProject(pid);
+      setProjects((prev) => prev.filter((p) => p.id !== pid));
+      setProjectGifsMap((prev) => { const next = { ...prev }; delete next[pid]; return next; });
+      if (expandedId === pid) setExpandedId(null);
+      if (currentProjectIdRef.current === pid) {
+        currentProjectIdRef.current = null;
+        currentImageBlobRef.current = null;
+        setActiveProjectId(null);
+      }
     });
-    await removeProject(pid);
-    setProjects((prev) => prev.filter((p) => p.id !== pid));
-    setProjectGifsMap((prev) => { const next = { ...prev }; delete next[pid]; return next; });
-    if (expandedId === pid) setExpandedId(null);
-    if (currentProjectIdRef.current === pid) {
+  }, [expandedId, projectGifsMap, askConfirm]);
+
+  const handleRemoveGif = useCallback((e, gifId, pid) => {
+    e.stopPropagation();
+    askConfirm('이 GIF를 삭제하시겠습니까?', async () => {
+      URL.revokeObjectURL(gifUrlsRef.current.get(gifId));
+      gifUrlsRef.current.delete(gifId);
+      await removeGif(gifId);
+      setProjectGifsMap((prev) => ({
+        ...prev,
+        [pid]: (prev[pid] || []).filter((gif) => gif.id !== gifId),
+      }));
+    });
+  }, [askConfirm]);
+
+  const handleClearAll = useCallback(() => {
+    askConfirm('모든 프로젝트와 GIF를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.', async () => {
+      gifUrlsRef.current.forEach((u) => URL.revokeObjectURL(u));
+      gifUrlsRef.current.clear();
+      await clearAllProjects();
+      setProjects([]);
+      setProjectGifsMap({});
+      setExpandedId(null);
       currentProjectIdRef.current = null;
       currentImageBlobRef.current = null;
       setActiveProjectId(null);
-    }
-  }, [expandedId, projectGifsMap]);
-
-  const handleRemoveGif = useCallback(async (e, gifId, pid) => {
-    e.stopPropagation();
-    URL.revokeObjectURL(gifUrlsRef.current.get(gifId));
-    gifUrlsRef.current.delete(gifId);
-    await removeGif(gifId);
-    setProjectGifsMap((prev) => ({
-      ...prev,
-      [pid]: (prev[pid] || []).filter((gif) => gif.id !== gifId),
-    }));
-  }, []);
-
-  const handleClearAll = useCallback(async () => {
-    gifUrlsRef.current.forEach((u) => URL.revokeObjectURL(u));
-    gifUrlsRef.current.clear();
-    await clearAllProjects();
-    setProjects([]);
-    setProjectGifsMap({});
-    setExpandedId(null);
-    currentProjectIdRef.current = null;
-    currentImageBlobRef.current = null;
-    setActiveProjectId(null);
-  }, []);
+    });
+  }, [askConfirm]);
 
   const handleStartRename = useCallback((e, project) => {
     e.stopPropagation();
@@ -195,12 +216,12 @@ export default function App() {
   const handleCancelRename = useCallback(() => setEditingProjectId(null), []);
 
   // ── DOM refs ───────────────────────────────────────────────────────────────
-  const canvasRef      = useRef(null);
-  const previewRef     = useRef(null);
-  const fileInputRef   = useRef(null);
-  const urlInputRef    = useRef(null);
-  const dropAreaRef    = useRef(null);
-  const editorDropRef  = useRef(null);
+  const canvasRef     = useRef(null);
+  const previewRef    = useRef(null);
+  const fileInputRef  = useRef(null);
+  const urlInputRef   = useRef(null);
+  const dropAreaRef   = useRef(null);
+  const editorDropRef = useRef(null);
 
   // ── Engine refs ────────────────────────────────────────────────────────────
   const animationRef = useRef(null);
@@ -296,6 +317,7 @@ export default function App() {
   const applySettings = useCallback((settings) => {
     if (!settings) return;
     Object.assign(g, settings);
+    animationRef.current?.refreshSprite();
     setScaleVal(~~(settings.scale * 100));
     setSquishVal(~~(settings.squish * 100));
     setSpriteX(settings.spriteX);
@@ -306,27 +328,59 @@ export default function App() {
     if (!animationRef.current?.isPlaying?.()) animationRef.current?.tick?.();
   }, []);
 
-  // ── Image loading ──────────────────────────────────────────────────────────
-  const startNewProject = useCallback(async (name, imageSource) => {
+  // ── 이미지를 현재 프로젝트에 설정 (없으면 새 프로젝트 생성) ──────────────────
+  const loadImageIntoProject = useCallback(async (name, imageSource) => {
     setUploadError('');
     setFileName(truncate(name, 26));
 
-    // 이전 프로젝트 스냅샷 저장
+    const imageBlob = await blobFromSource(imageSource);
+    currentImageBlobRef.current = imageBlob;
+
+    const pid = currentProjectIdRef.current;
+    if (pid !== null) {
+      await updateProjectSnapshot(pid, imageBlob, captureSettings());
+      setProjects((prev) => prev.map((p) =>
+        p.id === pid ? { ...p, imageBlob, updatedAt: new Date() } : p,
+      ));
+    } else {
+      const id = await createProject(name, imageBlob, captureSettings());
+      currentProjectIdRef.current = id;
+      setActiveProjectId(id);
+      const now = new Date();
+      setProjects((prev) => [{ id, name, imageBlob, settings: captureSettings(), createdAt: now, updatedAt: now }, ...prev]);
+    }
+
+    loaderRef.current?.loadImage(imageSource);
+  }, []);
+
+  // ── 새 프로젝트 생성 (이미지 없이) ────────────────────────────────────────
+  const handleNewProject = useCallback(async () => {
     const prevPid = currentProjectIdRef.current;
     if (prevPid !== null) {
       await updateProjectSnapshot(prevPid, currentImageBlobRef.current, captureSettings());
     }
 
-    const imageBlob = await blobFromSource(imageSource);
-    currentImageBlobRef.current = imageBlob;
+    Object.assign(g, DEFAULTS);
+    setScaleVal(~~(DEFAULTS.scale * 100));
+    setSquishVal(~~(DEFAULTS.squish * 100));
+    setSpriteX(DEFAULTS.spriteX);
+    setSpriteY(DEFAULTS.spriteY);
+    setFps(INITIAL_FPS);
+    setFlip(DEFAULTS.flip);
+    setAdjustMode(false);
 
-    const id = await createProject(name, imageBlob, captureSettings());
+    const name = '새 프로젝트';
+    const settings = captureSettings();
+    const id = await createProject(name, null, settings);
     currentProjectIdRef.current = id;
+    currentImageBlobRef.current = null;
     setActiveProjectId(id);
+    setFileName('이미지 없음');
 
     const now = new Date();
-    setProjects((prev) => [{ id, name, imageBlob, settings: captureSettings(), createdAt: now, updatedAt: now }, ...prev]);
-    loaderRef.current?.loadImage(imageSource);
+    setProjects((prev) => [{ id, name, imageBlob: null, settings, createdAt: now, updatedAt: now }, ...prev]);
+
+    loaderRef.current?.loadImage(createDefaultSprite());
   }, []);
 
   // ── 프로젝트 전환 (이미지 + 설정 복원) ─────────────────────────────────────
@@ -337,26 +391,32 @@ export default function App() {
     if (prevPid !== null) {
       await updateProjectSnapshot(prevPid, currentImageBlobRef.current, captureSettings());
       setProjects((prev) => prev.map((p) =>
-        p.id === prevPid ? { ...p, settings: captureSettings(), updatedAt: new Date() } : p
+        p.id === prevPid ? { ...p, settings: captureSettings(), updatedAt: new Date() } : p,
       ));
     }
 
-    if (!project.imageBlob) return;
-
-    const url = URL.createObjectURL(project.imageBlob);
-    currentImageBlobRef.current = project.imageBlob;
     currentProjectIdRef.current = project.id;
     setActiveProjectId(project.id);
-    setFileName(truncate(project.name, 26));
-    applySettings(project.settings);
-    loaderRef.current?.loadImage(url);
+    setFileName(project.imageBlob ? truncate(project.name, 26) : '이미지 없음');
+
+    if (project.settings) applySettings(project.settings);
+    else Object.assign(g, DEFAULTS);
+
+    if (project.imageBlob) {
+      const url = URL.createObjectURL(project.imageBlob);
+      currentImageBlobRef.current = project.imageBlob;
+      loaderRef.current?.loadImage(url);
+    } else {
+      currentImageBlobRef.current = null;
+      loaderRef.current?.loadImage(createDefaultSprite());
+    }
   }, [applySettings]);
 
   // ── Drop zone wiring ───────────────────────────────────────────────────────
   const handleFile = useCallback((file) => {
     if (!file?.type.startsWith('image/')) return;
-    startNewProject(file.name || '이름 없는 이미지', URL.createObjectURL(file));
-  }, [startNewProject]);
+    loadImageIntoProject(file.name || '이름 없는 이미지', URL.createObjectURL(file));
+  }, [loadImageIntoProject]);
 
   useEffect(() => {
     const wire = (el) => {
@@ -385,8 +445,8 @@ export default function App() {
   const handlePaste = useCallback((e) => {
     const item = Array.from(e.clipboardData?.items ?? [])
       .find((i) => i.type.startsWith('image/'));
-    if (item) startNewProject('붙여넣은 이미지', URL.createObjectURL(item.getAsFile()));
-  }, [startNewProject]);
+    if (item) loadImageIntoProject('붙여넣은 이미지', URL.createObjectURL(item.getAsFile()));
+  }, [loadImageIntoProject]);
 
   useEffect(() => {
     window.addEventListener('paste', handlePaste);
@@ -405,8 +465,8 @@ export default function App() {
       const basename = pathname.split('/').pop();
       if (basename) name = decodeURIComponent(basename);
     } catch (_) {}
-    startNewProject(name, url);
-  }, [startNewProject]);
+    loadImageIntoProject(name, url);
+  }, [loadImageIntoProject]);
 
   // ── Playback ───────────────────────────────────────────────────────────────
   const togglePlay = useCallback(() => {
@@ -508,9 +568,14 @@ export default function App() {
         <aside className={`sidebar${sidebarOpen ? ' open' : ''}`}>
           <div className="sidebar-header">
             <span className="sidebar-title">프로젝트</span>
-            {projects.length > 0 && (
-              <button className="btn-xs" onClick={handleClearAll}>전체 삭제</button>
-            )}
+            <div className="sidebar-header-actions">
+              <button className="sidebar-new-btn" title="새 프로젝트" onClick={handleNewProject}>
+                <Plus size={13} />
+              </button>
+              {projects.length > 0 && (
+                <button className="btn-xs" onClick={handleClearAll}>전체 삭제</button>
+              )}
+            </div>
           </div>
           <div className="sidebar-list">
             {projects.length === 0 ? (
@@ -804,6 +869,19 @@ export default function App() {
           </div>
         </div>
       </div>
+
+      {/* ── 삭제 확인 모달 ── */}
+      {confirmModal && (
+        <div className="overlay open" onClick={(e) => e.target === e.currentTarget && closeConfirm()}>
+          <div className="overlay-card confirm-card">
+            <p className="confirm-message">{confirmModal.message}</p>
+            <div className="overlay-actions">
+              <button className="btn btn-ghost" onClick={closeConfirm}>취소</button>
+              <button className="btn btn-danger" onClick={handleConfirm}>삭제</button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

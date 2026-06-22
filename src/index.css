@@ -898,6 +898,49 @@ input[type="range"]::-moz-range-thumb {
 }
 .btn-xs:hover { color: var(--text); border-color: var(--text-muted); }
 
+.btn-danger {
+  background: #ef4444;
+  color: #fff;
+  flex: 1;
+  padding: 11px;
+}
+.btn-danger:hover { background: #dc2626; }
+
+/* ── Sidebar header actions ── */
+.sidebar-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sidebar-new-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.sidebar-new-btn:hover { background: var(--accent-subtle); color: var(--accent); border-color: var(--accent); }
+
+/* ── Confirm modal ── */
+.confirm-card {
+  max-width: 320px;
+}
+
+.confirm-message {
+  font-size: 0.87em;
+  color: var(--text);
+  text-align: center;
+  line-height: 1.6;
+  white-space: pre-line;
+}
+
 /* ── Mobile ── */
 @media (max-width: 800px) {
   .sidebar.open { width: 220px; min-width: 220px; }
