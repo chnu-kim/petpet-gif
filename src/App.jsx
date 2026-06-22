@@ -113,10 +113,9 @@ export default function App() {
   const closeConfirm = useCallback(() => setConfirmModal(null), []);
 
   const handleConfirm = useCallback(() => {
-    const fn = confirmModal?.onConfirm;
-    closeConfirm();
-    fn?.();
-  }, [confirmModal, closeConfirm]);
+    setConfirmModal(null);
+    confirmModal?.onConfirm?.();
+  }, [confirmModal]);
 
   // ── History (Project-based) ────────────────────────────────────────────────
   const [projects, setProjects]               = useState([]);
@@ -165,6 +164,7 @@ export default function App() {
         currentProjectIdRef.current = null;
         currentImageBlobRef.current = null;
         setActiveProjectId(null);
+        setView('empty');
       }
     });
   }, [expandedId, projectGifsMap, askConfirm]);
@@ -343,21 +343,27 @@ export default function App() {
         p.id === pid ? { ...p, imageBlob, updatedAt: new Date() } : p,
       ));
     } else {
-      const id = await createProject(name, imageBlob, captureSettings());
+      const settings = captureSettings();
+      const id = await createProject(name, imageBlob, settings);
       currentProjectIdRef.current = id;
       setActiveProjectId(id);
       const now = new Date();
-      setProjects((prev) => [{ id, name, imageBlob, settings: captureSettings(), createdAt: now, updatedAt: now }, ...prev]);
+      setProjects((prev) => [{ id, name, imageBlob, settings, createdAt: now, updatedAt: now }, ...prev]);
     }
 
-    loaderRef.current?.loadImage(imageSource);
+    const displayUrl = imageBlob ? URL.createObjectURL(imageBlob) : imageSource;
+    loaderRef.current?.loadImage(displayUrl);
   }, []);
 
   // ── 새 프로젝트 생성 (이미지 없이) ────────────────────────────────────────
   const handleNewProject = useCallback(async () => {
     const prevPid = currentProjectIdRef.current;
     if (prevPid !== null) {
-      await updateProjectSnapshot(prevPid, currentImageBlobRef.current, captureSettings());
+      const snap = captureSettings();
+      await updateProjectSnapshot(prevPid, currentImageBlobRef.current, snap);
+      setProjects((prev) => prev.map((p) =>
+        p.id === prevPid ? { ...p, settings: snap, updatedAt: new Date() } : p,
+      ));
     }
 
     Object.assign(g, DEFAULTS);
@@ -389,9 +395,10 @@ export default function App() {
 
     const prevPid = currentProjectIdRef.current;
     if (prevPid !== null) {
-      await updateProjectSnapshot(prevPid, currentImageBlobRef.current, captureSettings());
+      const snap = captureSettings();
+      await updateProjectSnapshot(prevPid, currentImageBlobRef.current, snap);
       setProjects((prev) => prev.map((p) =>
-        p.id === prevPid ? { ...p, settings: captureSettings(), updatedAt: new Date() } : p,
+        p.id === prevPid ? { ...p, settings: snap, updatedAt: new Date() } : p,
       ));
     }
 
@@ -399,8 +406,7 @@ export default function App() {
     setActiveProjectId(project.id);
     setFileName(project.imageBlob ? truncate(project.name, 26) : '이미지 없음');
 
-    if (project.settings) applySettings(project.settings);
-    else Object.assign(g, DEFAULTS);
+    applySettings(project.settings ?? DEFAULTS);
 
     if (project.imageBlob) {
       const url = URL.createObjectURL(project.imageBlob);
