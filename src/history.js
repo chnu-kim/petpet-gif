@@ -1,7 +1,7 @@
 export const MAX_GIFS_PER_PROJECT = 20;
 
 const DB_NAME  = 'petpet-history';
-const DB_VER   = 2;
+const DB_VER   = 3;
 const PROJECTS = 'projects';
 const GIFS     = 'gifs';
 
@@ -60,16 +60,26 @@ function txStores(db, storeNames, mode) {
 
 // ── Projects ────────────────────────────────────────────────────
 
-export async function createProject(name) {
+export async function createProject(name, imageBlob = null, settings = null) {
   const db  = await openDB();
   const now = new Date();
   return wrap(
     db.transaction(PROJECTS, 'readwrite').objectStore(PROJECTS).add({
       name,
+      imageBlob,
+      settings,
       createdAt: now,
       updatedAt: now,
     }),
   );
+}
+
+export async function updateProjectSnapshot(id, imageBlob, settings) {
+  const db    = await openDB();
+  const store = db.transaction(PROJECTS, 'readwrite').objectStore(PROJECTS);
+  const project = await wrap(store.get(id));
+  if (!project) return;
+  await wrap(store.put({ ...project, imageBlob, settings, updatedAt: new Date() }));
 }
 
 export async function renameProject(id, name) {

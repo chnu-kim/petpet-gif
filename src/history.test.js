@@ -4,6 +4,7 @@ import {
   _resetDB,
   createProject,
   renameProject,
+  updateProjectSnapshot,
   addGifToProject,
   listProjects,
   getProjectGifs,
@@ -39,6 +40,48 @@ describe('createProject', () => {
     expect(id1).not.toBe(id2);
     const projects = await listProjects();
     expect(projects).toHaveLength(2);
+  });
+
+  it('imageBlob과 settings를 함께 저장한다', async () => {
+    const blob = new Blob(['img'], { type: 'image/png' });
+    const settings = { scale: 1.2, squish: 1.5, spriteX: 10, spriteY: -5, delay: 50, flip: true };
+    await createProject('cat.png', blob, settings);
+    const [project] = await listProjects();
+    expect(project.imageBlob).toBeInstanceOf(Blob);
+    expect(project.settings).toEqual(settings);
+  });
+
+  it('imageBlob, settings 없이 생성하면 null로 저장된다', async () => {
+    await createProject('cat.png');
+    const [project] = await listProjects();
+    expect(project.imageBlob).toBeNull();
+    expect(project.settings).toBeNull();
+  });
+});
+
+// ── updateProjectSnapshot ───────────────────────────────────────
+describe('updateProjectSnapshot', () => {
+  it('imageBlob과 settings를 업데이트한다', async () => {
+    const id = await createProject('cat.png');
+    const blob = new Blob(['updated'], { type: 'image/png' });
+    const settings = { scale: 0.8, squish: 1.0, spriteX: 0, spriteY: 0, delay: 100, flip: false };
+    await updateProjectSnapshot(id, blob, settings);
+    const [project] = await listProjects();
+    expect(project.imageBlob).toBeInstanceOf(Blob);
+    expect(project.settings).toEqual(settings);
+  });
+
+  it('snapshot 업데이트 시 updatedAt이 갱신된다', async () => {
+    const id = await createProject('cat.png');
+    const [before] = await listProjects();
+    await new Promise((r) => setTimeout(r, 5));
+    await updateProjectSnapshot(id, new Blob(['x']), {});
+    const [after] = await listProjects();
+    expect(after.updatedAt.getTime()).toBeGreaterThan(before.updatedAt.getTime());
+  });
+
+  it('없는 id는 오류 없이 무시된다', async () => {
+    await expect(updateProjectSnapshot(9999, new Blob(['x']), {})).resolves.toBeUndefined();
   });
 });
 

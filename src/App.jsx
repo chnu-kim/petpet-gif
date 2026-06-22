@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   Hand, Sun, Moon, Image as ImageIcon, SkipBack, Play, Pause, SkipForward,
-  FlipHorizontal2, Move, RotateCcw, Download, Trash2, Pencil, Check, X as XIcon, ChevronRight,
+  FlipHorizontal2, Move, RotateCcw, Download, Trash2, Pencil, Check, X as XIcon,
+  ChevronRight, PanelLeftClose, PanelLeftOpen, Plus,
 } from 'lucide-react';
 import {
   g, DEFAULTS, clamp, truncate,
@@ -10,6 +11,7 @@ import {
 import {
   createProject,
   renameProject,
+  updateProjectSnapshot,
   addGifToProject,
   listProjects,
   getProjectGifs,
@@ -31,6 +33,26 @@ function fmtDate(d) {
   });
 }
 
+async function blobFromSource(src) {
+  try {
+    const res = await fetch(src);
+    return await res.blob();
+  } catch {
+    return null;
+  }
+}
+
+function captureSettings() {
+  return {
+    scale:   g.scale,
+    squish:  g.squish,
+    spriteX: g.spriteX,
+    spriteY: g.spriteY,
+    delay:   g.delay,
+    flip:    g.flip,
+  };
+}
+
 export default function App() {
   // ── Theme ──────────────────────────────────────────────────────────────────
   const [theme, setTheme] = useState(() =>
@@ -42,6 +64,19 @@ export default function App() {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('petpet-theme', theme);
   }, [theme]);
+
+  // ── Sidebar ────────────────────────────────────────────────────────────────
+  const [sidebarOpen, setSidebarOpen] = useState(() =>
+    localStorage.getItem('petpet-sidebar') !== 'closed'
+  );
+
+  const toggleSidebar = useCallback(() => {
+    setSidebarOpen((v) => {
+      const next = !v;
+      localStorage.setItem('petpet-sidebar', next ? 'open' : 'closed');
+      return next;
+    });
+  }, []);
 
   // ── View ───────────────────────────────────────────────────────────────────
   const [view, setView] = useState('empty');
@@ -68,15 +103,31 @@ export default function App() {
   const [gifUrl, setGifUrl]           = useState('');
   const [gifMeta, setGifMeta]         = useState('');
 
+  // ── Confirm modal ──────────────────────────────────────────────────────────
+  const [confirmModal, setConfirmModal] = useState(null);
+
+  const askConfirm = useCallback((message, onConfirm) => {
+    setConfirmModal({ message, onConfirm });
+  }, []);
+
+  const closeConfirm = useCallback(() => setConfirmModal(null), []);
+
+  const handleConfirm = useCallback(() => {
+    setConfirmModal(null);
+    confirmModal?.onConfirm?.();
+  }, [confirmModal]);
+
   // ── History (Project-based) ────────────────────────────────────────────────
-  const [projects, setProjects] = useState([]);
-  const [expandedId, setExpandedId] = useState(null);
-  const [projectGifsMap, setProjectGifsMap] = useState({});
+  const [projects, setProjects]               = useState([]);
+  const [activeProjectId, setActiveProjectId] = useState(null);
+  const [expandedId, setExpandedId]           = useState(null);
+  const [projectGifsMap, setProjectGifsMap]   = useState({});
   const [editingProjectId, setEditingProjectId] = useState(null);
-  const [editingName, setEditingName] = useState('');
+  const [editingName, setEditingName]         = useState('');
 
   const currentProjectIdRef = useRef(null);
-  const gifUrlsRef = useRef(new Map());
+  const currentImageBlobRef = useRef(null);
+  const gifUrlsRef          = useRef(new Map());
 
   useEffect(() => {
     listProjects().then(setProjects);
@@ -92,49 +143,58 @@ export default function App() {
         if (!gifUrlsRef.current.has(gif.id)) {
           gifUrlsRef.current.set(gif.id, URL.createObjectURL(gif.blob));
         }
-        return {
-          id: gif.id,
-          url: gifUrlsRef.current.get(gif.id),
-          size: gif.size,
-          duration: gif.duration,
-          createdAt: gif.createdAt,
-        };
+        return { id: gif.id, url: gifUrlsRef.current.get(gif.id), size: gif.size, duration: gif.duration, createdAt: gif.createdAt };
       });
       setProjectGifsMap((prev) => ({ ...prev, [pid]: withUrls }));
     }
   }, [expandedId, projectGifsMap]);
 
-  const handleRemoveProject = useCallback(async (e, pid) => {
+  const handleRemoveProject = useCallback((e, pid) => {
     e.stopPropagation();
-    (projectGifsMap[pid] || []).forEach((gif) => {
-      URL.revokeObjectURL(gifUrlsRef.current.get(gif.id));
-      gifUrlsRef.current.delete(gif.id);
+    askConfirm('이 프로젝트를 삭제하시겠습니까?\n포함된 GIF도 모두 삭제됩니다.', async () => {
+      (projectGifsMap[pid] || []).forEach((gif) => {
+        URL.revokeObjectURL(gifUrlsRef.current.get(gif.id));
+        gifUrlsRef.current.delete(gif.id);
+      });
+      await removeProject(pid);
+      setProjects((prev) => prev.filter((p) => p.id !== pid));
+      setProjectGifsMap((prev) => { const next = { ...prev }; delete next[pid]; return next; });
+      if (expandedId === pid) setExpandedId(null);
+      if (currentProjectIdRef.current === pid) {
+        currentProjectIdRef.current = null;
+        currentImageBlobRef.current = null;
+        setActiveProjectId(null);
+        setView('empty');
+      }
     });
-    await removeProject(pid);
-    setProjects((prev) => prev.filter((p) => p.id !== pid));
-    setProjectGifsMap((prev) => { const next = { ...prev }; delete next[pid]; return next; });
-    if (expandedId === pid) setExpandedId(null);
-  }, [expandedId, projectGifsMap]);
+  }, [expandedId, projectGifsMap, askConfirm]);
 
-  const handleRemoveGif = useCallback(async (e, gifId, pid) => {
+  const handleRemoveGif = useCallback((e, gifId, pid) => {
     e.stopPropagation();
-    URL.revokeObjectURL(gifUrlsRef.current.get(gifId));
-    gifUrlsRef.current.delete(gifId);
-    await removeGif(gifId);
-    setProjectGifsMap((prev) => ({
-      ...prev,
-      [pid]: (prev[pid] || []).filter((gif) => gif.id !== gifId),
-    }));
-  }, []);
+    askConfirm('이 GIF를 삭제하시겠습니까?', async () => {
+      URL.revokeObjectURL(gifUrlsRef.current.get(gifId));
+      gifUrlsRef.current.delete(gifId);
+      await removeGif(gifId);
+      setProjectGifsMap((prev) => ({
+        ...prev,
+        [pid]: (prev[pid] || []).filter((gif) => gif.id !== gifId),
+      }));
+    });
+  }, [askConfirm]);
 
-  const handleClearAll = useCallback(async () => {
-    gifUrlsRef.current.forEach((u) => URL.revokeObjectURL(u));
-    gifUrlsRef.current.clear();
-    await clearAllProjects();
-    setProjects([]);
-    setProjectGifsMap({});
-    setExpandedId(null);
-  }, []);
+  const handleClearAll = useCallback(() => {
+    askConfirm('모든 프로젝트와 GIF를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.', async () => {
+      gifUrlsRef.current.forEach((u) => URL.revokeObjectURL(u));
+      gifUrlsRef.current.clear();
+      await clearAllProjects();
+      setProjects([]);
+      setProjectGifsMap({});
+      setExpandedId(null);
+      currentProjectIdRef.current = null;
+      currentImageBlobRef.current = null;
+      setActiveProjectId(null);
+    });
+  }, [askConfirm]);
 
   const handleStartRename = useCallback((e, project) => {
     e.stopPropagation();
@@ -156,12 +216,12 @@ export default function App() {
   const handleCancelRename = useCallback(() => setEditingProjectId(null), []);
 
   // ── DOM refs ───────────────────────────────────────────────────────────────
-  const canvasRef      = useRef(null);
-  const previewRef     = useRef(null);
-  const fileInputRef   = useRef(null);
-  const urlInputRef    = useRef(null);
-  const dropAreaRef    = useRef(null);
-  const editorDropRef  = useRef(null);
+  const canvasRef     = useRef(null);
+  const previewRef    = useRef(null);
+  const fileInputRef  = useRef(null);
+  const urlInputRef   = useRef(null);
+  const dropAreaRef   = useRef(null);
+  const editorDropRef = useRef(null);
 
   // ── Engine refs ────────────────────────────────────────────────────────────
   const animationRef = useRef(null);
@@ -214,6 +274,8 @@ export default function App() {
         const pid = currentProjectIdRef.current;
         if (pid === null) return;
 
+        updateProjectSnapshot(pid, currentImageBlobRef.current, captureSettings());
+
         addGifToProject(pid, blob, { size: `${size}KB`, duration: `${sec}초` }).then((gifId) => {
           const url = URL.createObjectURL(blob);
           gifUrlsRef.current.set(gifId, url);
@@ -251,22 +313,116 @@ export default function App() {
     return () => { cancelled = true; animation.destroy(); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Image loading ──────────────────────────────────────────────────────────
-  const startNewProject = useCallback(async (name, imageSource) => {
+  // ── Settings ───────────────────────────────────────────────────────────────
+  const applySettings = useCallback((settings) => {
+    if (!settings) return;
+    Object.assign(g, settings);
+    animationRef.current?.refreshSprite();
+    setScaleVal(~~(settings.scale * 100));
+    setSquishVal(~~(settings.squish * 100));
+    setSpriteX(settings.spriteX);
+    setSpriteY(settings.spriteY);
+    setFps(Math.round(1000 / settings.delay));
+    setFlip(settings.flip);
+    animationRef.current?.restartIfPlaying?.();
+    if (!animationRef.current?.isPlaying?.()) animationRef.current?.tick?.();
+  }, []);
+
+  // ── 이미지를 현재 프로젝트에 설정 (없으면 새 프로젝트 생성) ──────────────────
+  const loadImageIntoProject = useCallback(async (name, imageSource) => {
     setUploadError('');
     setFileName(truncate(name, 26));
-    const id = await createProject(name);
-    currentProjectIdRef.current = id;
-    const now = new Date();
-    setProjects((prev) => [{ id, name, createdAt: now, updatedAt: now }, ...prev]);
-    loaderRef.current?.loadImage(imageSource);
+
+    const imageBlob = await blobFromSource(imageSource);
+    currentImageBlobRef.current = imageBlob;
+
+    const pid = currentProjectIdRef.current;
+    if (pid !== null) {
+      await updateProjectSnapshot(pid, imageBlob, captureSettings());
+      setProjects((prev) => prev.map((p) =>
+        p.id === pid ? { ...p, imageBlob, updatedAt: new Date() } : p,
+      ));
+    } else {
+      const settings = captureSettings();
+      const id = await createProject(name, imageBlob, settings);
+      currentProjectIdRef.current = id;
+      setActiveProjectId(id);
+      const now = new Date();
+      setProjects((prev) => [{ id, name, imageBlob, settings, createdAt: now, updatedAt: now }, ...prev]);
+    }
+
+    const displayUrl = imageBlob ? URL.createObjectURL(imageBlob) : imageSource;
+    loaderRef.current?.loadImage(displayUrl);
   }, []);
+
+  // ── 새 프로젝트 생성 (이미지 없이) ────────────────────────────────────────
+  const handleNewProject = useCallback(async () => {
+    const prevPid = currentProjectIdRef.current;
+    if (prevPid !== null) {
+      const snap = captureSettings();
+      await updateProjectSnapshot(prevPid, currentImageBlobRef.current, snap);
+      setProjects((prev) => prev.map((p) =>
+        p.id === prevPid ? { ...p, settings: snap, updatedAt: new Date() } : p,
+      ));
+    }
+
+    Object.assign(g, DEFAULTS);
+    setScaleVal(~~(DEFAULTS.scale * 100));
+    setSquishVal(~~(DEFAULTS.squish * 100));
+    setSpriteX(DEFAULTS.spriteX);
+    setSpriteY(DEFAULTS.spriteY);
+    setFps(INITIAL_FPS);
+    setFlip(DEFAULTS.flip);
+    setAdjustMode(false);
+
+    const name = '새 프로젝트';
+    const settings = captureSettings();
+    const id = await createProject(name, null, settings);
+    currentProjectIdRef.current = id;
+    currentImageBlobRef.current = null;
+    setActiveProjectId(id);
+    setFileName('이미지 없음');
+
+    const now = new Date();
+    setProjects((prev) => [{ id, name, imageBlob: null, settings, createdAt: now, updatedAt: now }, ...prev]);
+
+    loaderRef.current?.loadImage(createDefaultSprite());
+  }, []);
+
+  // ── 프로젝트 전환 (이미지 + 설정 복원) ─────────────────────────────────────
+  const handleSwitchProject = useCallback(async (project) => {
+    if (project.id === currentProjectIdRef.current) return;
+
+    const prevPid = currentProjectIdRef.current;
+    if (prevPid !== null) {
+      const snap = captureSettings();
+      await updateProjectSnapshot(prevPid, currentImageBlobRef.current, snap);
+      setProjects((prev) => prev.map((p) =>
+        p.id === prevPid ? { ...p, settings: snap, updatedAt: new Date() } : p,
+      ));
+    }
+
+    currentProjectIdRef.current = project.id;
+    setActiveProjectId(project.id);
+    setFileName(project.imageBlob ? truncate(project.name, 26) : '이미지 없음');
+
+    applySettings(project.settings ?? DEFAULTS);
+
+    if (project.imageBlob) {
+      const url = URL.createObjectURL(project.imageBlob);
+      currentImageBlobRef.current = project.imageBlob;
+      loaderRef.current?.loadImage(url);
+    } else {
+      currentImageBlobRef.current = null;
+      loaderRef.current?.loadImage(createDefaultSprite());
+    }
+  }, [applySettings]);
 
   // ── Drop zone wiring ───────────────────────────────────────────────────────
   const handleFile = useCallback((file) => {
     if (!file?.type.startsWith('image/')) return;
-    startNewProject(file.name || '이름 없는 이미지', URL.createObjectURL(file));
-  }, [startNewProject]);
+    loadImageIntoProject(file.name || '이름 없는 이미지', URL.createObjectURL(file));
+  }, [loadImageIntoProject]);
 
   useEffect(() => {
     const wire = (el) => {
@@ -295,8 +451,8 @@ export default function App() {
   const handlePaste = useCallback((e) => {
     const item = Array.from(e.clipboardData?.items ?? [])
       .find((i) => i.type.startsWith('image/'));
-    if (item) startNewProject('붙여넣은 이미지', URL.createObjectURL(item.getAsFile()));
-  }, [startNewProject]);
+    if (item) loadImageIntoProject('붙여넣은 이미지', URL.createObjectURL(item.getAsFile()));
+  }, [loadImageIntoProject]);
 
   useEffect(() => {
     window.addEventListener('paste', handlePaste);
@@ -315,8 +471,8 @@ export default function App() {
       const basename = pathname.split('/').pop();
       if (basename) name = decodeURIComponent(basename);
     } catch (_) {}
-    startNewProject(name, url);
-  }, [startNewProject]);
+    loadImageIntoProject(name, url);
+  }, [loadImageIntoProject]);
 
   // ── Playback ───────────────────────────────────────────────────────────────
   const togglePlay = useCallback(() => {
@@ -386,9 +542,14 @@ export default function App() {
   return (
     <>
       <header>
-        <div className="header-brand">
-          <div className="brand-icon"><Hand size={ICON_MD} /></div>
-          <h1>PetPet Generator</h1>
+        <div className="header-left">
+          <button className="sidebar-toggle" title={sidebarOpen ? '사이드바 닫기' : '사이드바 열기'} onClick={toggleSidebar}>
+            {sidebarOpen ? <PanelLeftClose size={ICON_MD} /> : <PanelLeftOpen size={ICON_MD} />}
+          </button>
+          <div className="header-brand">
+            <div className="brand-icon"><Hand size={ICON_MD} /></div>
+            <h1>PetPet Generator</h1>
+          </div>
         </div>
         <button
           className="theme-toggle"
@@ -408,276 +569,291 @@ export default function App() {
         onChange={() => handleFile(fileInputRef.current?.files[0])}
       />
 
-      {/* ── 빈 상태 ── */}
-      <div className="empty-state" style={{ display: view === 'empty' ? 'flex' : 'none' }}>
-        <p className="empty-title">PetPet GIF 만들기</p>
-        <p className="empty-sub">이미지를 올리면 손이 쓰다듬는 GIF를 만들어드립니다</p>
-
-        <div className="big-drop" ref={dropAreaRef} role="button" tabIndex={0} onClick={openFilePicker}>
-          <ImageIcon className="drop-icon" size={36} strokeWidth={1.25} />
-          <span className="drop-text">클릭하거나 드래그 / 붙여넣기(Ctrl+V)하세요</span>
-          <span className="drop-hint">PNG · JPG · GIF · WebP</span>
-        </div>
-
-        <div className="or-row">또는</div>
-
-        <div className="url-row">
-          <input
-            ref={urlInputRef}
-            className="url-input"
-            type="text"
-            placeholder="이미지 URL 붙여넣기"
-            onKeyDown={(e) => e.key === 'Enter' && loadFromUrl()}
-          />
-          <button className="btn btn-ghost" onClick={loadFromUrl}>불러오기</button>
-        </div>
-        {uploadError && <p className="upload-error">{uploadError}</p>}
-      </div>
-
-      {/* ── 에디터 ── */}
-      <div className="editor" style={{ display: view === 'editor' ? 'grid' : 'none' }}>
-
-        {/* 캔버스 컬럼 */}
-        <div className="canvas-col">
-          <div className="canvas-card">
-            <div className="canvas-frame">
-              <canvas
-                ref={canvasRef}
-                width="112"
-                height="112"
-                className={`main-canvas${adjustMode ? ' adjust-mode' : ''}`}
-              />
-            </div>
-            <div className="playback">
-              <button className="play-btn" title="이전 프레임" onClick={() => seek(-1)}>
-                <SkipBack size={ICON_MD} />
+      <div className="app-body">
+        {/* ── 사이드바 ── */}
+        <aside className={`sidebar${sidebarOpen ? ' open' : ''}`}>
+          <div className="sidebar-header">
+            <span className="sidebar-title">프로젝트</span>
+            <div className="sidebar-header-actions">
+              <button className="sidebar-new-btn" title="새 프로젝트" onClick={handleNewProject}>
+                <Plus size={13} />
               </button>
-              <button className="play-btn play-btn-main" title="재생/정지" onClick={togglePlay}>
-                {playing ? <Pause size={ICON_MD} /> : <Play size={ICON_MD} />}
-              </button>
-              <button className="play-btn" title="다음 프레임" onClick={() => seek(1)}>
-                <SkipForward size={ICON_MD} />
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* 컨트롤 컬럼 */}
-        <div className="controls-col">
-
-          {/* 이미지 변경 */}
-          <div className="card">
-            <p className="card-label">이미지</p>
-            <div
-              className="change-img-btn"
-              ref={editorDropRef}
-              role="button"
-              tabIndex={0}
-              onClick={openFilePicker}
-            >
-              <ImageIcon size={ICON_MD} />
-              <span className="upload-file-name">{fileName}</span>
-              <span className="drop-hint">Ctrl+V</span>
-            </div>
-            {uploadError && <p className="upload-error">{uploadError}</p>}
-          </div>
-
-          {/* 조절 */}
-          <div className="card">
-            <p className="card-label">조절</p>
-
-            <div className="control">
-              <span className="ctrl-lbl">크기</span>
-              <input type="range" min="20" max="200" value={scaleVal}
-                onChange={(e) => handleSlider('scale', setScaleVal, e.target.value, { divisor: 100, min: 20, max: 200 })} />
-              <span className="ctrl-val">{scaleVal}%</span>
-            </div>
-            <div className="control">
-              <span className="ctrl-lbl">X 위치</span>
-              <input type="range" min="-112" max="224" value={spriteX}
-                onChange={(e) => handleSlider('spriteX', setSpriteX, e.target.value)} />
-              <span className="ctrl-val">{spriteX}</span>
-            </div>
-            <div className="control">
-              <span className="ctrl-lbl">Y 위치</span>
-              <input type="range" min="-112" max="224" value={spriteY}
-                onChange={(e) => handleSlider('spriteY', setSpriteY, e.target.value)} />
-              <span className="ctrl-val">{spriteY}</span>
-            </div>
-
-            <div className="divider" />
-
-            <div className="control">
-              <span className="ctrl-lbl">눌림</span>
-              <input type="range" min="100" max="300" value={squishVal}
-                onChange={(e) => handleSlider('squish', setSquishVal, e.target.value, { divisor: 100, min: 100, max: 300 })} />
-              <span className="ctrl-val">{squishVal}%</span>
-            </div>
-
-            <div className="divider" />
-
-            <div className="toggle-row">
-              <button className="toggle-btn" aria-pressed={String(flip)} onClick={handleFlip}>
-                <FlipHorizontal2 size={ICON_SM} /> 좌우 반전
-              </button>
-              <button className="toggle-btn" aria-pressed={String(adjustMode)} onClick={handleAdjust}>
-                <Move size={ICON_SM} /> 드래그 모드
-              </button>
-            </div>
-          </div>
-
-          {/* 재생 속도 */}
-          <div className="card">
-            <p className="card-label">재생 속도</p>
-            <div className="control">
-              <span className="ctrl-lbl">FPS</span>
-              <input type="range" min="2" max="60" value={fps}
-                onChange={(e) => handleFpsChange(e.target.value)} />
-              <input type="number" className="fps-number" min="2" max="60" value={fps}
-                onChange={(e) => handleFpsChange(e.target.value)} />
-            </div>
-          </div>
-
-          {/* 내보내기 */}
-          <div className="card">
-            <p className="card-label">내보내기</p>
-            <div className="export-row">
-              <button className="btn btn-ghost" onClick={handleReset}><RotateCcw size={ICON_SM} /> 초기화</button>
-              <button className="btn btn-accent" disabled={exporting} onClick={() => rendererRef.current?.render()}>
-                {exportLabel}
-              </button>
-            </div>
-            {exportInfo && <p className="export-info">{exportInfo}</p>}
-          </div>
-
-          {/* 프로젝트 히스토리 */}
-          <div className="card">
-            <div className="card-label-row">
-              <p className="card-label">프로젝트</p>
               {projects.length > 0 && (
                 <button className="btn-xs" onClick={handleClearAll}>전체 삭제</button>
               )}
             </div>
+          </div>
+          <div className="sidebar-list">
             {projects.length === 0 ? (
-              <p className="history-empty">저장된 프로젝트가 없습니다</p>
+              <p className="sidebar-empty">저장된 프로젝트가 없습니다</p>
             ) : (
-              <div className="project-list">
-                {projects.map((project) => {
-                  const isExpanded = expandedId === project.id;
-                  const isEditing  = editingProjectId === project.id;
-                  const gifs       = projectGifsMap[project.id];
+              projects.map((project) => {
+                const isActive   = activeProjectId === project.id;
+                const isExpanded = expandedId === project.id;
+                const isEditing  = editingProjectId === project.id;
+                const gifs       = projectGifsMap[project.id];
 
-                  return (
-                    <div key={project.id} className={`project-item${isExpanded ? ' expanded' : ''}`}>
-                      <div
-                        className="project-header"
-                        onClick={() => !isEditing && handleExpandProject(project.id)}
-                      >
-                        <ChevronRight size={12} className="project-chevron" />
+                return (
+                  <div key={project.id} className={`sidebar-project${isActive ? ' active' : ''}${isExpanded ? ' expanded' : ''}`}>
+                    <div
+                      className="sidebar-project-header"
+                      onClick={() => {
+                        if (isEditing) return;
+                        handleSwitchProject(project);
+                        handleExpandProject(project.id);
+                      }}
+                    >
+                      <ChevronRight size={11} className="sidebar-chevron" />
 
-                        <div className="project-name-wrap">
-                          {isEditing ? (
-                            <>
-                              <input
-                                className="project-name-input"
-                                value={editingName}
-                                autoFocus
-                                onChange={(e) => setEditingName(e.target.value)}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') handleFinishRename(project.id);
-                                  if (e.key === 'Escape') handleCancelRename();
-                                }}
-                                onClick={(e) => e.stopPropagation()}
-                              />
-                              <button
-                                className="project-rename-action-btn confirm"
-                                title="확인"
-                                onClick={(e) => { e.stopPropagation(); handleFinishRename(project.id); }}
-                              >
-                                <Check size={11} />
-                              </button>
-                              <button
-                                className="project-rename-action-btn cancel"
-                                title="취소"
-                                onClick={(e) => { e.stopPropagation(); handleCancelRename(); }}
-                              >
-                                <XIcon size={11} />
-                              </button>
-                            </>
-                          ) : (
-                            <>
-                              <span className="project-name" title={project.name}>{project.name}</span>
-                              <button
-                                className="project-rename-btn"
-                                title="이름 수정"
-                                onClick={(e) => handleStartRename(e, project)}
-                              >
-                                <Pencil size={10} />
-                              </button>
-                            </>
-                          )}
-                        </div>
-
-                        <div className="project-dates">
-                          <div>생성 {fmtDate(project.createdAt)}</div>
-                          <div>수정 {fmtDate(project.updatedAt)}</div>
-                        </div>
-
-                        {!isEditing && (
-                          <button
-                            className="project-del-btn"
-                            title="프로젝트 삭제"
-                            onClick={(e) => handleRemoveProject(e, project.id)}
-                          >
-                            <Trash2 size={11} />
-                          </button>
+                      <div className="sidebar-name-wrap">
+                        {isEditing ? (
+                          <>
+                            <input
+                              className="sidebar-name-input"
+                              value={editingName}
+                              autoFocus
+                              onChange={(e) => setEditingName(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleFinishRename(project.id);
+                                if (e.key === 'Escape') handleCancelRename();
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                            <button
+                              className="sidebar-rename-btn confirm"
+                              title="확인"
+                              onClick={(e) => { e.stopPropagation(); handleFinishRename(project.id); }}
+                            >
+                              <Check size={10} />
+                            </button>
+                            <button
+                              className="sidebar-rename-btn cancel"
+                              title="취소"
+                              onClick={(e) => { e.stopPropagation(); handleCancelRename(); }}
+                            >
+                              <XIcon size={10} />
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <span className="sidebar-name" title={project.name}>{project.name}</span>
+                            <button
+                              className="sidebar-pencil-btn"
+                              title="이름 수정"
+                              onClick={(e) => handleStartRename(e, project)}
+                            >
+                              <Pencil size={10} />
+                            </button>
+                          </>
                         )}
                       </div>
 
-                      {isExpanded && (
-                        <div className="project-gifs">
-                          {!gifs ? (
-                            <p className="history-empty">불러오는 중…</p>
-                          ) : gifs.length === 0 ? (
-                            <p className="history-empty">GIF가 없습니다</p>
-                          ) : (
-                            <div className="history-grid">
-                              {gifs.map((gif) => (
-                                <div className="history-item" key={gif.id}>
-                                  <img src={gif.url} alt="gif" />
-                                  <div className="history-item-overlay">
-                                    <a
-                                      className="history-item-btn dl"
-                                      href={gif.url}
-                                      download={`petpet-${gif.id}.gif`}
-                                      title="다운로드"
-                                      onClick={(e) => e.stopPropagation()}
-                                    >
-                                      <Download size={12} />
-                                    </a>
-                                    <button
-                                      className="history-item-btn del"
-                                      title="삭제"
-                                      onClick={(e) => handleRemoveGif(e, gif.id, project.id)}
-                                    >
-                                      <Trash2 size={12} />
-                                    </button>
-                                    <span className="history-meta">{gif.size}</span>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
+                      {!isEditing && (
+                        <button
+                          className="sidebar-del-btn"
+                          title="삭제"
+                          onClick={(e) => handleRemoveProject(e, project.id)}
+                        >
+                          <Trash2 size={11} />
+                        </button>
                       )}
                     </div>
-                  );
-                })}
-              </div>
+
+                    <div className="sidebar-dates">
+                      <span>생성 {fmtDate(project.createdAt)}</span>
+                      <span>수정 {fmtDate(project.updatedAt)}</span>
+                    </div>
+
+                    {isExpanded && (
+                      <div className="sidebar-gifs">
+                        {!gifs ? (
+                          <p className="sidebar-empty-sm">불러오는 중…</p>
+                        ) : gifs.length === 0 ? (
+                          <p className="sidebar-empty-sm">GIF가 없습니다</p>
+                        ) : (
+                          <div className="sidebar-gif-grid">
+                            {gifs.map((gif) => (
+                              <div className="history-item" key={gif.id}>
+                                <img src={gif.url} alt="gif" />
+                                <div className="history-item-overlay">
+                                  <a
+                                    className="history-item-btn dl"
+                                    href={gif.url}
+                                    download={`petpet-${gif.id}.gif`}
+                                    title="다운로드"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <Download size={12} />
+                                  </a>
+                                  <button
+                                    className="history-item-btn del"
+                                    title="삭제"
+                                    onClick={(e) => handleRemoveGif(e, gif.id, project.id)}
+                                  >
+                                    <Trash2 size={12} />
+                                  </button>
+                                  <span className="history-meta">{gif.size}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })
             )}
           </div>
+        </aside>
 
-        </div>
+        {/* ── 메인 콘텐츠 ── */}
+        <main className="main-content">
+          {/* 빈 상태 */}
+          <div className="empty-state" style={{ display: view === 'empty' ? 'flex' : 'none' }}>
+            <p className="empty-title">PetPet GIF 만들기</p>
+            <p className="empty-sub">이미지를 올리면 손이 쓰다듬는 GIF를 만들어드립니다</p>
+
+            <div className="big-drop" ref={dropAreaRef} role="button" tabIndex={0} onClick={openFilePicker}>
+              <ImageIcon className="drop-icon" size={36} strokeWidth={1.25} />
+              <span className="drop-text">클릭하거나 드래그 / 붙여넣기(Ctrl+V)하세요</span>
+              <span className="drop-hint">PNG · JPG · GIF · WebP</span>
+            </div>
+
+            <div className="or-row">또는</div>
+
+            <div className="url-row">
+              <input
+                ref={urlInputRef}
+                className="url-input"
+                type="text"
+                placeholder="이미지 URL 붙여넣기"
+                onKeyDown={(e) => e.key === 'Enter' && loadFromUrl()}
+              />
+              <button className="btn btn-ghost" onClick={loadFromUrl}>불러오기</button>
+            </div>
+            {uploadError && <p className="upload-error">{uploadError}</p>}
+          </div>
+
+          {/* 에디터 */}
+          <div className="editor" style={{ display: view === 'editor' ? 'grid' : 'none' }}>
+
+            {/* 캔버스 컬럼 */}
+            <div className="canvas-col">
+              <div className="canvas-card">
+                <div className="canvas-frame">
+                  <canvas
+                    ref={canvasRef}
+                    width="112"
+                    height="112"
+                    className={`main-canvas${adjustMode ? ' adjust-mode' : ''}`}
+                  />
+                </div>
+                <div className="playback">
+                  <button className="play-btn" title="이전 프레임" onClick={() => seek(-1)}>
+                    <SkipBack size={ICON_MD} />
+                  </button>
+                  <button className="play-btn play-btn-main" title="재생/정지" onClick={togglePlay}>
+                    {playing ? <Pause size={ICON_MD} /> : <Play size={ICON_MD} />}
+                  </button>
+                  <button className="play-btn" title="다음 프레임" onClick={() => seek(1)}>
+                    <SkipForward size={ICON_MD} />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* 컨트롤 컬럼 */}
+            <div className="controls-col">
+
+              {/* 이미지 변경 */}
+              <div className="card">
+                <p className="card-label">이미지</p>
+                <div
+                  className="change-img-btn"
+                  ref={editorDropRef}
+                  role="button"
+                  tabIndex={0}
+                  onClick={openFilePicker}
+                >
+                  <ImageIcon size={ICON_MD} />
+                  <span className="upload-file-name">{fileName}</span>
+                  <span className="drop-hint">Ctrl+V</span>
+                </div>
+                {uploadError && <p className="upload-error">{uploadError}</p>}
+              </div>
+
+              {/* 조절 */}
+              <div className="card">
+                <p className="card-label">조절</p>
+
+                <div className="control">
+                  <span className="ctrl-lbl">크기</span>
+                  <input type="range" min="20" max="200" value={scaleVal}
+                    onChange={(e) => handleSlider('scale', setScaleVal, e.target.value, { divisor: 100, min: 20, max: 200 })} />
+                  <span className="ctrl-val">{scaleVal}%</span>
+                </div>
+                <div className="control">
+                  <span className="ctrl-lbl">X 위치</span>
+                  <input type="range" min="-112" max="224" value={spriteX}
+                    onChange={(e) => handleSlider('spriteX', setSpriteX, e.target.value)} />
+                  <span className="ctrl-val">{spriteX}</span>
+                </div>
+                <div className="control">
+                  <span className="ctrl-lbl">Y 위치</span>
+                  <input type="range" min="-112" max="224" value={spriteY}
+                    onChange={(e) => handleSlider('spriteY', setSpriteY, e.target.value)} />
+                  <span className="ctrl-val">{spriteY}</span>
+                </div>
+
+                <div className="divider" />
+
+                <div className="control">
+                  <span className="ctrl-lbl">눌림</span>
+                  <input type="range" min="100" max="300" value={squishVal}
+                    onChange={(e) => handleSlider('squish', setSquishVal, e.target.value, { divisor: 100, min: 100, max: 300 })} />
+                  <span className="ctrl-val">{squishVal}%</span>
+                </div>
+
+                <div className="divider" />
+
+                <div className="toggle-row">
+                  <button className="toggle-btn" aria-pressed={String(flip)} onClick={handleFlip}>
+                    <FlipHorizontal2 size={ICON_SM} /> 좌우 반전
+                  </button>
+                  <button className="toggle-btn" aria-pressed={String(adjustMode)} onClick={handleAdjust}>
+                    <Move size={ICON_SM} /> 드래그 모드
+                  </button>
+                </div>
+              </div>
+
+              {/* 재생 속도 */}
+              <div className="card">
+                <p className="card-label">재생 속도</p>
+                <div className="control">
+                  <span className="ctrl-lbl">FPS</span>
+                  <input type="range" min="2" max="60" value={fps}
+                    onChange={(e) => handleFpsChange(e.target.value)} />
+                  <input type="number" className="fps-number" min="2" max="60" value={fps}
+                    onChange={(e) => handleFpsChange(e.target.value)} />
+                </div>
+              </div>
+
+              {/* 내보내기 */}
+              <div className="card">
+                <p className="card-label">내보내기</p>
+                <div className="export-row">
+                  <button className="btn btn-ghost" onClick={handleReset}><RotateCcw size={ICON_SM} /> 초기화</button>
+                  <button className="btn btn-accent" disabled={exporting} onClick={() => rendererRef.current?.render()}>
+                    {exportLabel}
+                  </button>
+                </div>
+                {exportInfo && <p className="export-info">{exportInfo}</p>}
+              </div>
+
+            </div>
+          </div>
+        </main>
       </div>
 
       {/* ── GIF 결과 오버레이 ── */}
@@ -699,6 +875,19 @@ export default function App() {
           </div>
         </div>
       </div>
+
+      {/* ── 삭제 확인 모달 ── */}
+      {confirmModal && (
+        <div className="overlay open" onClick={(e) => e.target === e.currentTarget && closeConfirm()}>
+          <div className="overlay-card confirm-card">
+            <p className="confirm-message">{confirmModal.message}</p>
+            <div className="overlay-actions">
+              <button className="btn btn-ghost" onClick={closeConfirm}>취소</button>
+              <button className="btn btn-danger" onClick={handleConfirm}>삭제</button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
