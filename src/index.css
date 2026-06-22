@@ -584,6 +584,99 @@ input[type="range"]::-moz-range-thumb {
 }
 .download-link:hover { background: var(--accent-hover); }
 
+/* ── History ── */
+.history-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.history-item {
+  position: relative;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--bg-input);
+  aspect-ratio: 1;
+  cursor: pointer;
+}
+
+.history-item:hover .history-item-overlay {
+  opacity: 1;
+}
+
+.history-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.history-item-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,.55);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.history-item-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.12s;
+}
+
+.history-item-btn.dl  { background: var(--accent); color: #fff; }
+.history-item-btn.del { background: rgba(255,255,255,.15); color: #fff; }
+.history-item-btn.dl:hover  { background: var(--accent-hover); }
+.history-item-btn.del:hover { background: rgba(239,68,68,.7); }
+
+.history-meta {
+  font-size: 10px;
+  color: rgba(255,255,255,.8);
+  text-align: center;
+  line-height: 1.3;
+}
+
+.history-empty {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 12px 0;
+}
+
+.card-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 2px;
+}
+
+.btn-xs {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s;
+}
+.btn-xs:hover { color: var(--text); border-color: var(--text-muted); }
+
 /* ── Mobile ── */
 @media (max-width: 800px) {
   .editor { grid-template-columns: 1fr; }

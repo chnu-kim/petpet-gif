@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   Hand, Sun, Moon, Image as ImageIcon, SkipBack, Play, Pause, SkipForward,
-  FlipHorizontal2, Move, RotateCcw, Download,
+  FlipHorizontal2, Move, RotateCcw, Download, Trash2,
 } from 'lucide-react';
 import {
   g, DEFAULTS, clamp, truncate,
   createDefaultSprite, ImageLoader, PetPetAnimation, GifRenderer,
 } from './engine.js';
+import { addToHistory, getHistory, removeFromHistory, clearHistory, MAX_HISTORY } from './history.js';
 
 const INITIAL_FPS = Math.round(1000 / DEFAULTS.delay);
 const ICON_SM = 14;
@@ -48,6 +49,41 @@ export default function App() {
   const [overlayOpen, setOverlayOpen] = useState(false);
   const [gifUrl, setGifUrl]           = useState('');
   const [gifMeta, setGifMeta]         = useState('');
+
+  // ── History ────────────────────────────────────────────────────────────────
+  const [historyItems, setHistoryItems] = useState([]);
+  const historyUrlsRef = useRef(new Map()); // id → object URL
+
+  const loadHistory = useCallback(async () => {
+    const items = await getHistory();
+    historyUrlsRef.current.forEach((u) => URL.revokeObjectURL(u));
+    historyUrlsRef.current.clear(); // Fix D: new Map() → .clear()
+    const withUrls = items.map((item) => {
+      const url = URL.createObjectURL(item.blob);
+      historyUrlsRef.current.set(item.id, url);
+      return { id: item.id, url, size: item.size, duration: item.duration, createdAt: item.createdAt };
+    });
+    setHistoryItems(withUrls);
+  }, []);
+
+  useEffect(() => {
+    loadHistory();
+    return () => { historyUrlsRef.current.forEach((u) => URL.revokeObjectURL(u)); };
+  }, [loadHistory]);
+
+  const handleRemoveHistory = useCallback(async (id) => {
+    URL.revokeObjectURL(historyUrlsRef.current.get(id));
+    historyUrlsRef.current.delete(id);
+    await removeFromHistory(id);
+    setHistoryItems((prev) => prev.filter((item) => item.id !== id));
+  }, []);
+
+  const handleClearHistory = useCallback(async () => {
+    historyUrlsRef.current.forEach((u) => URL.revokeObjectURL(u));
+    historyUrlsRef.current.clear(); // Fix D: new Map() → .clear()
+    await clearHistory();
+    setHistoryItems([]);
+  }, []);
 
   // ── DOM refs ───────────────────────────────────────────────────────────────
   const canvasRef      = useRef(null);
@@ -104,6 +140,21 @@ export default function App() {
         setGifUrl((prev) => { URL.revokeObjectURL(prev); return URL.createObjectURL(blob); });
         setGifMeta(label);
         setOverlayOpen(true);
+        // Fix E: DB 저장 완료 후 반환된 id로 낙관적 prepend — 전체 재로드 없음
+        addToHistory(blob, { size: `${size}KB`, duration: `${sec}초` }).then((id) => {
+          const histUrl = URL.createObjectURL(blob);
+          historyUrlsRef.current.set(id, histUrl);
+          setHistoryItems((prev) => {
+            const next = [{ id, url: histUrl, size: `${size}KB`, duration: `${sec}초`, createdAt: new Date() }, ...prev];
+            if (next.length > MAX_HISTORY) {
+              next.splice(MAX_HISTORY).forEach((item) => {
+                URL.revokeObjectURL(historyUrlsRef.current.get(item.id));
+                historyUrlsRef.current.delete(item.id);
+              });
+            }
+            return next;
+          });
+        });
       }
     );
 
@@ -126,7 +177,7 @@ export default function App() {
     loaderRef.current.loadImage(createDefaultSprite());
 
     return () => { cancelled = true; animation.destroy(); };
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Drop zone wiring ───────────────────────────────────────────────────────
   const handleFile = useCallback((file) => {
@@ -434,6 +485,45 @@ export default function App() {
               </button>
             </div>
             {exportInfo && <p className="export-info">{exportInfo}</p>}
+          </div>
+
+          {/* 히스토리 */}
+          <div className="card">
+            <div className="card-label-row">
+              <p className="card-label">히스토리</p>
+              {historyItems.length > 0 && (
+                <button className="btn-xs" onClick={handleClearHistory}>전체 삭제</button>
+              )}
+            </div>
+            {historyItems.length === 0 ? (
+              <p className="history-empty">생성된 GIF가 없습니다</p>
+            ) : (
+              <div className="history-grid">
+                {historyItems.map((item) => (
+                  <div className="history-item" key={item.id}>
+                    <img src={item.url} alt="history gif" />
+                    <div className="history-item-overlay">
+                      <a
+                        className="history-item-btn dl"
+                        href={item.url}
+                        download={`petpet-${item.id}.gif`}
+                        title="다운로드"
+                      >
+                        <Download size={12} />
+                      </a>
+                      <button
+                        className="history-item-btn del"
+                        title="삭제"
+                        onClick={() => handleRemoveHistory(item.id)}
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                      <span className="history-meta">{item.size}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
         </div>
